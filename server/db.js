@@ -18,6 +18,21 @@ console.log(`📁 Database path: ${dbPath}`)
 
 const db = new Database(dbPath)
 
+// Schema version tracking
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+
+// Get current schema version
+function getCurrentVersion() {
+  const result = db.prepare('SELECT MAX(version) as version FROM schema_version').get()
+  return result.version || 0
+}
+
+// Initial schema (version 1)
 db.exec(`
   CREATE TABLE IF NOT EXISTS positions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,4 +55,42 @@ db.exec(`
   )
 `)
 
+// Initialize schema version if this is a new database
+const currentVersion = getCurrentVersion()
+if (currentVersion === 0) {
+  db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(1)
+  console.log('📋 Database initialized at schema version 1')
+} else {
+  console.log(`📋 Current schema version: ${currentVersion}`)
+}
+
+// Migration system - add future migrations here
+const migrations = [
+  // Example migration for version 2:
+  // {
+  //   version: 2,
+  //   up: (db) => {
+  //     db.exec('ALTER TABLE positions ADD COLUMN new_field TEXT')
+  //     console.log('✅ Migrated to version 2: Added new_field column')
+  //   }
+  // }
+]
+
+// Run pending migrations
+function runMigrations() {
+  const currentVersion = getCurrentVersion()
+
+  for (const migration of migrations) {
+    if (migration.version > currentVersion) {
+      console.log(`🔄 Running migration to version ${migration.version}...`)
+      migration.up(db)
+      db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(migration.version)
+      console.log(`✅ Migration to version ${migration.version} complete`)
+    }
+  }
+}
+
+runMigrations()
+
 export default db
+export { dbPath }

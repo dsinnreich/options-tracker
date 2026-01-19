@@ -6,6 +6,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import positionsRouter from './routes/positions.js'
 import pricesRouter from './routes/prices.js'
+import backupRouter from './routes/backup.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -31,6 +32,7 @@ app.use(express.json())
 
 app.use('/api/positions', positionsRouter)
 app.use('/api/prices', pricesRouter)
+app.use('/api/backup', backupRouter)
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })
