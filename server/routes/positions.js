@@ -1,0 +1,175 @@
+import { Router } from 'express'
+import db from '../db.js'
+
+const router = Router()
+
+// Get all positions
+router.get('/', (req, res) => {
+  try {
+    const positions = db.prepare('SELECT * FROM positions ORDER BY created_at DESC').all()
+    res.json(positions)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Get single position
+router.get('/:id', (req, res) => {
+  try {
+    const position = db.prepare('SELECT * FROM positions WHERE id = ?').get(req.params.id)
+    if (!position) {
+      return res.status(404).json({ error: 'Position not found' })
+    }
+    res.json(position)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Create position
+router.post('/', (req, res) => {
+  try {
+    const {
+      account,
+      ticker,
+      strike_price,
+      stock_price,
+      option_ticker,
+      quantity,
+      open_date,
+      expiration_date,
+      premium_per_contract,
+      fees,
+      current_option_price
+    } = req.body
+
+    const stmt = db.prepare(`
+      INSERT INTO positions (
+        account, ticker, strike_price, stock_price, option_ticker, quantity,
+        open_date, expiration_date, premium_per_contract, fees, current_option_price
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    const result = stmt.run(
+      account,
+      ticker,
+      strike_price,
+      stock_price,
+      option_ticker || null,
+      quantity,
+      open_date,
+      expiration_date,
+      premium_per_contract,
+      fees || 0,
+      current_option_price || 0
+    )
+
+    const newPosition = db.prepare('SELECT * FROM positions WHERE id = ?').get(result.lastInsertRowid)
+    res.status(201).json(newPosition)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Update position
+router.put('/:id', (req, res) => {
+  try {
+    const {
+      account,
+      ticker,
+      strike_price,
+      stock_price,
+      option_ticker,
+      quantity,
+      open_date,
+      expiration_date,
+      premium_per_contract,
+      fees,
+      current_option_price,
+      status
+    } = req.body
+
+    const stmt = db.prepare(`
+      UPDATE positions SET
+        account = ?,
+        ticker = ?,
+        strike_price = ?,
+        stock_price = ?,
+        option_ticker = ?,
+        quantity = ?,
+        open_date = ?,
+        expiration_date = ?,
+        premium_per_contract = ?,
+        fees = ?,
+        current_option_price = ?,
+        status = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `)
+
+    stmt.run(
+      account,
+      ticker,
+      strike_price,
+      stock_price,
+      option_ticker || null,
+      quantity,
+      open_date,
+      expiration_date,
+      premium_per_contract,
+      fees || 0,
+      current_option_price || 0,
+      status || 'Open',
+      req.params.id
+    )
+
+    const updated = db.prepare('SELECT * FROM positions WHERE id = ?').get(req.params.id)
+    if (!updated) {
+      return res.status(404).json({ error: 'Position not found' })
+    }
+    res.json(updated)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Close position
+router.put('/:id/close', (req, res) => {
+  try {
+    const { close_price } = req.body
+
+    const stmt = db.prepare(`
+      UPDATE positions SET
+        status = 'Closed',
+        closed_at = CURRENT_TIMESTAMP,
+        close_price = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `)
+
+    stmt.run(close_price || 0, req.params.id)
+
+    const updated = db.prepare('SELECT * FROM positions WHERE id = ?').get(req.params.id)
+    if (!updated) {
+      return res.status(404).json({ error: 'Position not found' })
+    }
+    res.json(updated)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Delete position
+router.delete('/:id', (req, res) => {
+  try {
+    const result = db.prepare('DELETE FROM positions WHERE id = ?').run(req.params.id)
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Position not found' })
+    }
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+export default router
