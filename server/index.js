@@ -50,11 +50,15 @@ app.post('/api/upload-db', express.text({ limit: '50mb' }), (req, res) => {
     // Write the database file
     fs.writeFileSync(dbPath, buffer)
     console.log(`📤 Database uploaded: ${dbPath} (${buffer.length} bytes)`)
+    console.log(`📊 File size on disk: ${fs.statSync(dbPath).size} bytes`)
 
-    // Reload database connection to use the new file
-    reloadDatabase()
+    res.json({ success: true, message: 'Database uploaded - restart to load', size: buffer.length })
 
-    res.json({ success: true, message: 'Database uploaded and reloaded successfully', size: buffer.length })
+    // Exit gracefully to trigger Railway restart
+    setTimeout(() => {
+      console.log('🔄 Exiting to restart and load new database...')
+      process.exit(0)
+    }, 1000)
   } catch (error) {
     console.error('Database upload error:', error)
     res.status(500).json({ success: false, error: error.message })

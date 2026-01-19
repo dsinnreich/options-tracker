@@ -16,6 +16,14 @@ if (!existsSync(dataDir)) {
 
 console.log(`📁 Database path: ${dbPath}`)
 
+// Check if database already exists
+if (existsSync(dbPath)) {
+  const stats = require('fs').statSync(dbPath)
+  console.log(`📊 Existing database found: ${stats.size} bytes`)
+} else {
+  console.log(`📝 Creating new database at ${dbPath}`)
+}
+
 let db = new Database(dbPath)
 
 db.exec(`
@@ -43,9 +51,18 @@ db.exec(`
 // Function to reload database connection
 export function reloadDatabase() {
   console.log('🔄 Closing and reopening database connection...')
-  db.close()
+  try {
+    db.close()
+  } catch (e) {
+    // Ignore if already closed
+  }
   db = new Database(dbPath)
   console.log('✅ Database connection reloaded')
+  return db
+}
+
+// Getter function to always get current db instance
+export function getDb() {
   return db
 }
 
