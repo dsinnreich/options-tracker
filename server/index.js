@@ -50,7 +50,13 @@ app.post('/api/upload-db', express.text({ limit: '50mb' }), (req, res) => {
     fs.writeFileSync(dbPath, buffer)
     console.log(`📤 Database uploaded: ${dbPath} (${buffer.length} bytes)`)
 
-    res.json({ success: true, message: 'Database uploaded successfully', size: buffer.length })
+    res.json({ success: true, message: 'Database uploaded successfully - server will restart', size: buffer.length })
+
+    // Restart server to reload database
+    setTimeout(() => {
+      console.log('🔄 Restarting server to load new database...')
+      process.exit(0)
+    }, 1000)
   } catch (error) {
     console.error('Database upload error:', error)
     res.status(500).json({ success: false, error: error.message })
