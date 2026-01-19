@@ -4,10 +4,8 @@ import cors from 'cors'
 import basicAuth from 'express-basic-auth'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import fs from 'fs'
 import positionsRouter from './routes/positions.js'
 import pricesRouter from './routes/prices.js'
-import { reloadDatabase } from './db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -33,37 +31,6 @@ app.use(express.json())
 
 app.use('/api/positions', positionsRouter)
 app.use('/api/prices', pricesRouter)
-
-// Temporary endpoint for database migration
-app.post('/api/upload-db', express.text({ limit: '50mb' }), (req, res) => {
-  try {
-    const base64Data = req.body
-    const buffer = Buffer.from(base64Data, 'base64')
-    const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../data/options.db')
-
-    // Ensure directory exists
-    const dbDir = path.dirname(dbPath)
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true })
-    }
-
-    // Write the database file
-    fs.writeFileSync(dbPath, buffer)
-    console.log(`📤 Database uploaded: ${dbPath} (${buffer.length} bytes)`)
-    console.log(`📊 File size on disk: ${fs.statSync(dbPath).size} bytes`)
-
-    res.json({ success: true, message: 'Database uploaded - restart to load', size: buffer.length })
-
-    // Exit gracefully to trigger Railway restart
-    setTimeout(() => {
-      console.log('🔄 Exiting to restart and load new database...')
-      process.exit(0)
-    }, 1000)
-  } catch (error) {
-    console.error('Database upload error:', error)
-    res.status(500).json({ success: false, error: error.message })
-  }
-})
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })
