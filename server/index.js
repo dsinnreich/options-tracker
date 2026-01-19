@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 import fs from 'fs'
 import positionsRouter from './routes/positions.js'
 import pricesRouter from './routes/prices.js'
+import { reloadDatabase } from './db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -50,13 +51,10 @@ app.post('/api/upload-db', express.text({ limit: '50mb' }), (req, res) => {
     fs.writeFileSync(dbPath, buffer)
     console.log(`📤 Database uploaded: ${dbPath} (${buffer.length} bytes)`)
 
-    res.json({ success: true, message: 'Database uploaded successfully - server will restart', size: buffer.length })
+    // Reload database connection to use the new file
+    reloadDatabase()
 
-    // Restart server to reload database
-    setTimeout(() => {
-      console.log('🔄 Restarting server to load new database...')
-      process.exit(0)
-    }, 1000)
+    res.json({ success: true, message: 'Database uploaded and reloaded successfully', size: buffer.length })
   } catch (error) {
     console.error('Database upload error:', error)
     res.status(500).json({ success: false, error: error.message })

@@ -16,7 +16,7 @@ if (!existsSync(dataDir)) {
 
 console.log(`📁 Database path: ${dbPath}`)
 
-const db = new Database(dbPath)
+let db = new Database(dbPath)
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS positions (
@@ -39,5 +39,14 @@ db.exec(`
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
   )
 `)
+
+// Function to reload database connection
+export function reloadDatabase() {
+  console.log('🔄 Closing and reopening database connection...')
+  db.close()
+  db = new Database(dbPath)
+  console.log('✅ Database connection reloaded')
+  return db
+}
 
 export default db
