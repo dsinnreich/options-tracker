@@ -7,7 +7,7 @@ const router = Router()
 // Export all positions as JSON (for easy backup)
 router.get('/export/json', (req, res) => {
   try {
-    const positions = db.prepare('SELECT * FROM positions ORDER BY created_at DESC').all()
+    const positions = db.prepare('SELECT * FROM positions WHERE user_id = ? ORDER BY created_at DESC').all(req.session.userId)
     const backup = {
       exported_at: new Date().toISOString(),
       schema_version: db.prepare('SELECT MAX(version) as version FROM schema_version').get().version,
@@ -35,11 +35,11 @@ router.post('/import/json', (req, res) => {
     // Insert each position (skip id to let DB auto-generate)
     const insert = db.prepare(`
       INSERT INTO positions (
-        account, ticker, strike_price, stock_price, option_ticker,
+        user_id, account, ticker, strike_price, stock_price, option_ticker,
         quantity, open_date, expiration_date, premium_per_contract,
         fees, current_option_price, status, closed_at, close_price,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     let imported = 0
@@ -48,6 +48,7 @@ router.post('/import/json', (req, res) => {
     for (const pos of backup.positions) {
       try {
         insert.run(
+          req.session.userId,
           pos.account, pos.ticker, pos.strike_price, pos.stock_price, pos.option_ticker,
           pos.quantity, pos.open_date, pos.expiration_date, pos.premium_per_contract,
           pos.fees || 0, pos.current_option_price || 0, pos.status || 'Open',
@@ -92,10 +93,10 @@ router.get('/export/csv', (req, res) => {
     if (ids && ids.length > 0) {
       // Export selected positions
       const placeholders = ids.map(() => '?').join(',')
-      positions = db.prepare(`SELECT * FROM positions WHERE id IN (${placeholders}) ORDER BY created_at DESC`).all(...ids)
+      positions = db.prepare(`SELECT * FROM positions WHERE id IN (${placeholders}) AND user_id = ? ORDER BY created_at DESC`).all(...ids, req.session.userId)
     } else {
       // Export all positions
-      positions = db.prepare('SELECT * FROM positions ORDER BY created_at DESC').all()
+      positions = db.prepare('SELECT * FROM positions WHERE user_id = ? ORDER BY created_at DESC').all(req.session.userId)
     }
 
     if (positions.length === 0) {
@@ -165,10 +166,10 @@ router.post('/import/csv', (req, res) => {
 
     const insert = db.prepare(`
       INSERT INTO positions (
-        account, ticker, strike_price, stock_price, option_ticker,
+        user_id, account, ticker, strike_price, stock_price, option_ticker,
         quantity, open_date, expiration_date, premium_per_contract,
         fees, current_option_price, status, closed_at, close_price
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     let imported = 0
@@ -217,6 +218,7 @@ router.post('/import/csv', (req, res) => {
         }
 
         insert.run(
+          req.session.userId,
           position.account, position.ticker, position.strike_price, position.stock_price,
           position.option_ticker || null,
           position.quantity, position.open_date, position.expiration_date,
@@ -248,10 +250,10 @@ router.post('/import/csv', (req, res) => {
 // Get backup info
 router.get('/info', (req, res) => {
   try {
-    const positionsCount = db.prepare('SELECT COUNT(*) as count FROM positions').get().count
+    const positionsCount = db.prepare('SELECT COUNT(*) as count FROM positions WHERE user_id = ?').get(req.session.userId).count
     const schemaVersion = db.prepare('SELECT MAX(version) as version FROM schema_version').get().version
-    const openPositions = db.prepare("SELECT COUNT(*) as count FROM positions WHERE status = 'Open'").get().count
-    const closedPositions = db.prepare("SELECT COUNT(*) as count FROM positions WHERE status = 'Closed'").get().count
+    const openPositions = db.prepare("SELECT COUNT(*) as count FROM positions WHERE user_id = ? AND status = 'Open'").get(req.session.userId).count
+    const closedPositions = db.prepare("SELECT COUNT(*) as count FROM positions WHERE user_id = ? AND status = 'Closed'").get(req.session.userId).count
 
     res.json({
       schema_version: schemaVersion,

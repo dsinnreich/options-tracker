@@ -69,7 +69,9 @@ function PositionsTable({ positions, onClose, onDelete }) {
         ? `/api/backup/export/csv?ids=${ids}`
         : '/api/backup/export/csv'
 
-      const response = await fetch(url)
+      const response = await fetch(url, {
+        credentials: 'include'
+      })
       const blob = await response.blob()
       const downloadUrl = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -99,6 +101,7 @@ function PositionsTable({ positions, onClose, onDelete }) {
         headers: {
           'Content-Type': 'text/plain',
         },
+        credentials: 'include',
         body: text
       })
 

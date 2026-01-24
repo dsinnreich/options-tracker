@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { existsSync, mkdirSync } from 'fs'
+import bcrypt from 'bcrypt'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -66,14 +67,74 @@ if (currentVersion === 0) {
 
 // Migration system - add future migrations here
 const migrations = [
-  // Example migration for version 2:
-  // {
-  //   version: 2,
-  //   up: (db) => {
-  //     db.exec('ALTER TABLE positions ADD COLUMN new_field TEXT')
-  //     console.log('✅ Migrated to version 2: Added new_field column')
-  //   }
-  // }
+  {
+    version: 2,
+    up: (db) => {
+      // Create users table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          email TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          name TEXT NOT NULL,
+          is_admin INTEGER DEFAULT 0,
+          reset_token TEXT,
+          reset_token_expires TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+
+      // Create a default admin user with temporary password
+      // Default password: 'changeme' - IMPORTANT: Change this immediately!
+      const defaultPasswordHash = bcrypt.hashSync('changeme', 10)
+
+      db.prepare(`
+        INSERT OR IGNORE INTO users (email, password_hash, name, is_admin)
+        VALUES (?, ?, ?, 1)
+      `).run('admin@options-tracker.local', defaultPasswordHash, 'Admin')
+
+      // Add user_id column to positions table
+      db.exec('ALTER TABLE positions ADD COLUMN user_id INTEGER')
+
+      // Assign all existing positions to the admin user
+      const adminUser = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@options-tracker.local')
+      db.prepare('UPDATE positions SET user_id = ? WHERE user_id IS NULL').run(adminUser.id)
+
+      // Make user_id NOT NULL after backfilling
+      // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+      db.exec(`
+        CREATE TABLE positions_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          account TEXT NOT NULL,
+          ticker TEXT NOT NULL,
+          strike_price REAL NOT NULL,
+          stock_price REAL NOT NULL,
+          option_ticker TEXT,
+          quantity INTEGER NOT NULL,
+          open_date TEXT NOT NULL,
+          expiration_date TEXT NOT NULL,
+          premium_per_contract REAL NOT NULL,
+          fees REAL DEFAULT 0,
+          current_option_price REAL DEFAULT 0,
+          status TEXT CHECK(status IN ('Open', 'Closed')) DEFAULT 'Open',
+          closed_at TEXT,
+          close_price REAL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+      `)
+
+      db.exec('INSERT INTO positions_new SELECT * FROM positions')
+      db.exec('DROP TABLE positions')
+      db.exec('ALTER TABLE positions_new RENAME TO positions')
+
+      console.log('✅ Migrated to version 2: Added multi-user authentication')
+      console.log('⚠️  Default admin account created: admin@options-tracker.local / changeme')
+    }
+  }
 ]
 
 // Run pending migrations

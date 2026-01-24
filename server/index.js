@@ -1,12 +1,15 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
-import basicAuth from 'express-basic-auth'
+import session from 'express-session'
+import SQLiteStore from 'connect-sqlite3'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import positionsRouter from './routes/positions.js'
 import pricesRouter from './routes/prices.js'
 import backupRouter from './routes/backup.js'
+import authRouter from './routes/auth.js'
+import adminRouter from './routes/admin.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -15,25 +18,50 @@ const app = express()
 const PORT = process.env.PORT || 3001
 const NODE_ENV = process.env.NODE_ENV || 'development'
 
-// HTTP Basic Authentication (optional - only if credentials are set)
-if (process.env.AUTH_USERNAME && process.env.AUTH_PASSWORD) {
-  console.log('🔒 Authentication enabled')
-  app.use(basicAuth({
-    users: { [process.env.AUTH_USERNAME]: process.env.AUTH_PASSWORD },
-    challenge: true,
-    realm: 'Options Tracker'
-  }))
-} else {
-  console.log('⚠️  Authentication disabled - set AUTH_USERNAME and AUTH_PASSWORD to enable')
-}
+// Session configuration
+const SessionStore = SQLiteStore(session)
 
-app.use(cors())
+app.use(session({
+  store: new SessionStore({
+    db: 'sessions.db',
+    dir: path.join(__dirname, '../data')
+  }),
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: NODE_ENV === 'production', // Use secure cookies in production
+    httpOnly: true,
+    maxAge: 1000 * 60 * 60 * 24 * 7 // 1 week
+  }
+}))
+
+app.use(cors({
+  origin: NODE_ENV === 'production' ? process.env.APP_URL : 'http://localhost:5173',
+  credentials: true
+}))
+
 app.use(express.json())
 app.use(express.text())
 
-app.use('/api/positions', positionsRouter)
-app.use('/api/prices', pricesRouter)
-app.use('/api/backup', backupRouter)
+// Authentication middleware for protected routes
+function requireAuth(req, res, next) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  next()
+}
+
+// Public routes (no auth required)
+app.use('/api/auth', authRouter)
+
+// Protected routes (auth required)
+app.use('/api/positions', requireAuth, positionsRouter)
+app.use('/api/prices', requireAuth, pricesRouter)
+app.use('/api/backup', requireAuth, backupRouter)
+app.use('/api/admin', requireAuth, adminRouter)
+
+console.log('🔒 Session-based authentication enabled')
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })

@@ -8,10 +8,14 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "better-sqlite3": "^11.5.0",
+    "connect-sqlite3": "^0.9.16",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.1",
-    "express-basic-auth": "^1.2.1"
+    "express-basic-auth": "^1.2.1",
+    "express-session": "^1.19.0",
+    "nodemailer": "^7.0.12"
   }
 }

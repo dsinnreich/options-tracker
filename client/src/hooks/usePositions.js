@@ -11,7 +11,9 @@ export function usePositions() {
   const fetchPositions = useCallback(async () => {
     try {
       setLoading(true)
-      const response = await fetch(API_URL)
+      const response = await fetch(API_URL, {
+        credentials: 'include'
+      })
       if (!response.ok) throw new Error('Failed to fetch positions')
       const data = await response.json()
       const enriched = data.map(calculateDerivedFields)
@@ -30,7 +32,9 @@ export function usePositions() {
 
   const getPosition = useCallback(async (id) => {
     try {
-      const response = await fetch(`${API_URL}/${id}`)
+      const response = await fetch(`${API_URL}/${id}`, {
+        credentials: 'include'
+      })
       if (!response.ok) throw new Error('Failed to fetch position')
       const data = await response.json()
       return calculateDerivedFields(data)
@@ -45,6 +49,7 @@ export function usePositions() {
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(position)
       })
       if (!response.ok) throw new Error('Failed to create position')
@@ -61,6 +66,7 @@ export function usePositions() {
       const response = await fetch(`${API_URL}/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(position)
       })
       if (!response.ok) throw new Error('Failed to update position')
@@ -77,6 +83,7 @@ export function usePositions() {
       const response = await fetch(`${API_URL}/${id}/close`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ close_price: closePrice })
       })
       if (!response.ok) throw new Error('Failed to close position')
@@ -91,7 +98,8 @@ export function usePositions() {
   const deletePosition = useCallback(async (id) => {
     try {
       const response = await fetch(`${API_URL}/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       })
       if (!response.ok) throw new Error('Failed to delete position')
       await fetchPositions()
@@ -105,7 +113,8 @@ export function usePositions() {
   const refreshPrices = useCallback(async () => {
     try {
       const response = await fetch('/api/prices/refresh-all', {
-        method: 'POST'
+        method: 'POST',
+        credentials: 'include'
       })
       if (!response.ok) throw new Error('Failed to refresh prices')
       const result = await response.json()

@@ -1,7 +1,15 @@
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 
 function Layout() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user, logout, isAdmin } = useAuth()
+
+  const handleLogout = async () => {
+    await logout()
+    navigate('/login')
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -34,6 +42,18 @@ function Layout() {
               >
                 Help
               </Link>
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                    location.pathname === '/admin'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  Admin
+                </Link>
+              )}
               <Link
                 to="/add"
                 className={`px-3 py-2 rounded-md text-sm font-medium ${
@@ -44,6 +64,15 @@ function Layout() {
               >
                 + Add Position
               </Link>
+              <div className="flex items-center space-x-3 border-l pl-4">
+                <span className="text-sm text-gray-700">{user?.name}</span>
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                >
+                  Logout
+                </button>
+              </div>
             </div>
           </div>
         </div>

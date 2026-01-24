@@ -3,20 +3,20 @@ import db from '../db.js'
 
 const router = Router()
 
-// Get all positions
+// Get all positions for current user
 router.get('/', (req, res) => {
   try {
-    const positions = db.prepare('SELECT * FROM positions ORDER BY created_at DESC').all()
+    const positions = db.prepare('SELECT * FROM positions WHERE user_id = ? ORDER BY created_at DESC').all(req.session.userId)
     res.json(positions)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
 
-// Get single position
+// Get single position (must belong to current user)
 router.get('/:id', (req, res) => {
   try {
-    const position = db.prepare('SELECT * FROM positions WHERE id = ?').get(req.params.id)
+    const position = db.prepare('SELECT * FROM positions WHERE id = ? AND user_id = ?').get(req.params.id, req.session.userId)
     if (!position) {
       return res.status(404).json({ error: 'Position not found' })
     }
@@ -26,7 +26,7 @@ router.get('/:id', (req, res) => {
   }
 })
 
-// Create position
+// Create position (assigned to current user)
 router.post('/', (req, res) => {
   try {
     const {
@@ -45,12 +45,13 @@ router.post('/', (req, res) => {
 
     const stmt = db.prepare(`
       INSERT INTO positions (
-        account, ticker, strike_price, stock_price, option_ticker, quantity,
+        user_id, account, ticker, strike_price, stock_price, option_ticker, quantity,
         open_date, expiration_date, premium_per_contract, fees, current_option_price
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const result = stmt.run(
+      req.session.userId,
       account,
       ticker,
       strike_price,
@@ -104,10 +105,10 @@ router.put('/:id', (req, res) => {
         current_option_price = ?,
         status = ?,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = ? AND user_id = ?
     `)
 
-    stmt.run(
+    const result = stmt.run(
       account,
       ticker,
       strike_price,
@@ -120,8 +121,13 @@ router.put('/:id', (req, res) => {
       fees || 0,
       current_option_price || 0,
       status || 'Open',
-      req.params.id
+      req.params.id,
+      req.session.userId
     )
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Position not found' })
+    }
 
     const updated = db.prepare('SELECT * FROM positions WHERE id = ?').get(req.params.id)
     if (!updated) {
@@ -144,10 +150,14 @@ router.put('/:id/close', (req, res) => {
         closed_at = CURRENT_TIMESTAMP,
         close_price = ?,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = ? AND user_id = ?
     `)
 
-    stmt.run(close_price || 0, req.params.id)
+    const result = stmt.run(close_price || 0, req.params.id, req.session.userId)
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Position not found' })
+    }
 
     const updated = db.prepare('SELECT * FROM positions WHERE id = ?').get(req.params.id)
     if (!updated) {
@@ -162,7 +172,7 @@ router.put('/:id/close', (req, res) => {
 // Delete position
 router.delete('/:id', (req, res) => {
   try {
-    const result = db.prepare('DELETE FROM positions WHERE id = ?').run(req.params.id)
+    const result = db.prepare('DELETE FROM positions WHERE id = ? AND user_id = ?').run(req.params.id, req.session.userId)
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Position not found' })
     }
