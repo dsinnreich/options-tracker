@@ -83,6 +83,168 @@ router.get('/download/database', (req, res) => {
   }
 })
 
+// Export selected positions as CSV
+router.get('/export/csv', (req, res) => {
+  try {
+    const ids = req.query.ids ? req.query.ids.split(',').map(id => parseInt(id)) : null
+
+    let positions
+    if (ids && ids.length > 0) {
+      // Export selected positions
+      const placeholders = ids.map(() => '?').join(',')
+      positions = db.prepare(`SELECT * FROM positions WHERE id IN (${placeholders}) ORDER BY created_at DESC`).all(...ids)
+    } else {
+      // Export all positions
+      positions = db.prepare('SELECT * FROM positions ORDER BY created_at DESC').all()
+    }
+
+    if (positions.length === 0) {
+      return res.status(400).json({ error: 'No positions to export' })
+    }
+
+    // CSV headers
+    const headers = [
+      'id', 'account', 'ticker', 'strike_price', 'stock_price', 'option_ticker',
+      'quantity', 'open_date', 'expiration_date', 'premium_per_contract',
+      'fees', 'current_option_price', 'status', 'closed_at', 'close_price',
+      'created_at', 'updated_at'
+    ]
+
+    // Convert to CSV
+    let csv = headers.join(',') + '\n'
+
+    for (const pos of positions) {
+      const row = headers.map(header => {
+        let value = pos[header]
+        // Handle null values
+        if (value === null || value === undefined) {
+          return ''
+        }
+        // Escape quotes and wrap in quotes if contains comma
+        value = String(value)
+        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+          value = '"' + value.replace(/"/g, '""') + '"'
+        }
+        return value
+      })
+      csv += row.join(',') + '\n'
+    }
+
+    res.setHeader('Content-Type', 'text/csv')
+    res.setHeader('Content-Disposition', `attachment; filename="positions-${new Date().toISOString().split('T')[0]}.csv"`)
+    res.send(csv)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Import positions from CSV
+router.post('/import/csv', (req, res) => {
+  try {
+    const csvData = req.body
+
+    if (typeof csvData !== 'string') {
+      return res.status(400).json({ error: 'Invalid CSV data' })
+    }
+
+    // Parse CSV
+    const lines = csvData.trim().split('\n')
+    if (lines.length < 2) {
+      return res.status(400).json({ error: 'CSV file is empty or invalid' })
+    }
+
+    const headers = lines[0].split(',').map(h => h.trim())
+
+    // Validate required headers
+    const requiredHeaders = ['account', 'ticker', 'strike_price', 'stock_price', 'quantity',
+                             'open_date', 'expiration_date', 'premium_per_contract']
+    const missingHeaders = requiredHeaders.filter(h => !headers.includes(h))
+    if (missingHeaders.length > 0) {
+      return res.status(400).json({ error: `Missing required headers: ${missingHeaders.join(', ')}` })
+    }
+
+    const insert = db.prepare(`
+      INSERT INTO positions (
+        account, ticker, strike_price, stock_price, option_ticker,
+        quantity, open_date, expiration_date, premium_per_contract,
+        fees, current_option_price, status, closed_at, close_price
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    let imported = 0
+    let skipped = 0
+    const errors = []
+
+    // Skip header row, process data rows
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim()
+      if (!line) continue
+
+      try {
+        // Simple CSV parsing (handle quoted values)
+        const values = []
+        let current = ''
+        let inQuotes = false
+
+        for (let char of line) {
+          if (char === '"') {
+            inQuotes = !inQuotes
+          } else if (char === ',' && !inQuotes) {
+            values.push(current.trim())
+            current = ''
+          } else {
+            current += char
+          }
+        }
+        values.push(current.trim())
+
+        const position = {}
+        headers.forEach((header, index) => {
+          position[header] = values[index] || null
+        })
+
+        // Convert numeric fields
+        const numericFields = ['strike_price', 'stock_price', 'quantity', 'premium_per_contract', 'fees', 'current_option_price', 'close_price']
+        numericFields.forEach(field => {
+          if (position[field] && position[field] !== '') {
+            position[field] = parseFloat(position[field])
+          }
+        })
+
+        // Convert quantity to integer
+        if (position.quantity) {
+          position.quantity = parseInt(position.quantity)
+        }
+
+        insert.run(
+          position.account, position.ticker, position.strike_price, position.stock_price,
+          position.option_ticker || null,
+          position.quantity, position.open_date, position.expiration_date,
+          position.premium_per_contract,
+          position.fees || 0, position.current_option_price || 0,
+          position.status || 'Open',
+          position.closed_at || null, position.close_price || null
+        )
+        imported++
+      } catch (err) {
+        console.error(`Failed to import row ${i}: ${err.message}`)
+        errors.push(`Row ${i}: ${err.message}`)
+        skipped++
+      }
+    }
+
+    res.json({
+      success: true,
+      imported,
+      skipped,
+      total: lines.length - 1,
+      errors: errors.length > 0 ? errors : undefined
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // Get backup info
 router.get('/info', (req, res) => {
   try {

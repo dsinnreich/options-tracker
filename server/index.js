@@ -29,6 +29,7 @@ if (process.env.AUTH_USERNAME && process.env.AUTH_PASSWORD) {
 
 app.use(cors())
 app.use(express.json())
+app.use(express.text())
 
 app.use('/api/positions', positionsRouter)
 app.use('/api/prices', pricesRouter)

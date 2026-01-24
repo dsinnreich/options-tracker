@@ -9,6 +9,8 @@ function PositionsTable({ positions, onClose, onDelete }) {
   const [sortDirection, setSortDirection] = useState('desc')
   const [closingId, setClosingId] = useState(null)
   const [closePrice, setClosePrice] = useState('')
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [importing, setImporting] = useState(false)
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -39,6 +41,80 @@ function PositionsTable({ positions, onClose, onDelete }) {
       onClose(id, parseFloat(closePrice))
       setClosingId(null)
       setClosePrice('')
+    }
+  }
+
+  const toggleSelection = (id) => {
+    const newSelected = new Set(selectedIds)
+    if (newSelected.has(id)) {
+      newSelected.delete(id)
+    } else {
+      newSelected.add(id)
+    }
+    setSelectedIds(newSelected)
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === positions.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(positions.map(p => p.id)))
+    }
+  }
+
+  const handleExportCSV = async () => {
+    try {
+      const ids = Array.from(selectedIds).join(',')
+      const url = selectedIds.size > 0
+        ? `/api/backup/export/csv?ids=${ids}`
+        : '/api/backup/export/csv'
+
+      const response = await fetch(url)
+      const blob = await response.blob()
+      const downloadUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      a.download = `positions-${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(downloadUrl)
+
+      setSelectedIds(new Set())
+    } catch (error) {
+      alert('Failed to export CSV: ' + error.message)
+    }
+  }
+
+  const handleImportCSV = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    try {
+      setImporting(true)
+      const text = await file.text()
+
+      const response = await fetch('/api/backup/import/csv', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        body: text
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        alert(`Successfully imported ${result.imported} positions!${result.skipped > 0 ? `\n${result.skipped} positions were skipped.` : ''}`)
+        window.location.reload()
+      } else {
+        alert('Import failed: ' + result.error)
+      }
+    } catch (error) {
+      alert('Failed to import CSV: ' + error.message)
+    } finally {
+      setImporting(false)
+      event.target.value = ''
     }
   }
 
@@ -127,10 +203,54 @@ function PositionsTable({ positions, onClose, onDelete }) {
 
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Export/Import Controls */}
+      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleExportCSV}
+              disabled={positions.length === 0}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium"
+            >
+              {selectedIds.size > 0 ? `Export ${selectedIds.size} Selected` : 'Export All'}
+            </button>
+            <label className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm font-medium">
+              {importing ? 'Importing...' : 'Import CSV'}
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleImportCSV}
+                disabled={importing}
+                className="hidden"
+              />
+            </label>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="text-sm text-gray-600 hover:text-gray-800"
+              >
+                Clear selection
+              </button>
+            )}
+          </div>
+          <div className="text-sm text-gray-600">
+            {selectedIds.size > 0 && `${selectedIds.size} selected`}
+          </div>
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              <th className="px-4 py-3 text-left">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === positions.length && positions.length > 0}
+                  onChange={toggleSelectAll}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+              </th>
               <SortHeader field="ticker">Ticker</SortHeader>
               <SortHeader field="account">Account</SortHeader>
               <SortHeader field="strike_price">Strike</SortHeader>
@@ -149,6 +269,14 @@ function PositionsTable({ positions, onClose, onDelete }) {
           <tbody className="bg-white divide-y divide-gray-200">
             {sortedPositions.map((position) => (
               <tr key={position.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(position.id)}
+                    onChange={() => toggleSelection(position.id)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <div className="font-medium text-gray-900">{position.ticker}</div>
                   <div className="text-xs text-gray-500">{formatCurrency(position.stock_price)}</div>
