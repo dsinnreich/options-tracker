@@ -51,6 +51,13 @@ router.post('/login', async (req, res) => {
     req.session.userName = user.name
     req.session.isAdmin = user.is_admin === 1
 
+    console.log('Login successful:', {
+      userId: user.id,
+      email: user.email,
+      sessionID: req.sessionID,
+      isAdmin: user.is_admin === 1
+    })
+
     res.json({
       success: true,
       user: {

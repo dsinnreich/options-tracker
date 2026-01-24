@@ -45,9 +45,25 @@ app.use(cors({
 app.use(express.json())
 app.use(express.text())
 
+// Request logging in production
+if (NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.path}`, {
+      hasSession: !!req.session,
+      userId: req.session?.userId,
+      cookies: Object.keys(req.cookies || {})
+    })
+    next()
+  })
+}
+
 // Authentication middleware for protected routes
 function requireAuth(req, res, next) {
   if (!req.session.userId) {
+    console.log('Auth failed - no userId in session:', {
+      sessionId: req.sessionID,
+      session: req.session
+    })
     return res.status(401).json({ error: 'Authentication required' })
   }
   next()
