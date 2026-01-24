@@ -47,3 +47,7 @@ temp/
 # Backup files
 *.backup
 backup-*.db
+
+# macOS App bundles (local only)
+*.app/
+*alias
