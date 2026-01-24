@@ -18,6 +18,11 @@ const app = express()
 const PORT = process.env.PORT || 3001
 const NODE_ENV = process.env.NODE_ENV || 'development'
 
+// Trust Railway proxy
+if (NODE_ENV === 'production') {
+  app.set('trust proxy', 1)
+}
+
 // Session configuration
 const SessionStore = SQLiteStore(session)
 
@@ -48,10 +53,13 @@ app.use(express.text())
 // Request logging in production
 if (NODE_ENV === 'production') {
   app.use((req, res, next) => {
+    const cookieHeader = req.headers.cookie
     console.log(`${req.method} ${req.path}`, {
       hasSession: !!req.session,
+      sessionID: req.sessionID,
       userId: req.session?.userId,
-      cookies: Object.keys(req.cookies || {})
+      hasCookieHeader: !!cookieHeader,
+      cookieHeaderLength: cookieHeader?.length || 0
     })
     next()
   })

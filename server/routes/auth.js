@@ -51,19 +51,20 @@ router.post('/login', async (req, res) => {
     req.session.userName = user.name
     req.session.isAdmin = user.is_admin === 1
 
-    console.log('Login successful:', {
-      userId: user.id,
-      email: user.email,
-      sessionID: req.sessionID,
-      isAdmin: user.is_admin === 1
-    })
-
     // Explicitly save session before responding
     req.session.save((err) => {
       if (err) {
         console.error('Session save error:', err)
         return res.status(500).json({ error: 'Failed to save session' })
       }
+
+      console.log('Login successful and session saved:', {
+        userId: user.id,
+        email: user.email,
+        sessionID: req.sessionID,
+        sessionData: req.session,
+        isAdmin: user.is_admin === 1
+      })
 
       res.json({
         success: true,
