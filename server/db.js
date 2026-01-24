@@ -94,8 +94,15 @@ const migrations = [
         VALUES (?, ?, ?, 1)
       `).run('admin@options-tracker.local', defaultPasswordHash, 'Admin')
 
-      // Add user_id column to positions table
-      db.exec('ALTER TABLE positions ADD COLUMN user_id INTEGER')
+      // Add user_id column to positions table (if it doesn't already exist)
+      try {
+        db.exec('ALTER TABLE positions ADD COLUMN user_id INTEGER')
+      } catch (err) {
+        // Column might already exist from a previous partial migration, that's ok
+        if (!err.message.includes('duplicate column name')) {
+          throw err
+        }
+      }
 
       // Assign all existing positions to the admin user
       const adminUser = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@options-tracker.local')
@@ -103,6 +110,14 @@ const migrations = [
 
       // Make user_id NOT NULL after backfilling
       // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+
+      // Drop positions_new if it exists from a previous partial migration
+      try {
+        db.exec('DROP TABLE IF EXISTS positions_new')
+      } catch (err) {
+        // Ignore errors
+      }
+
       db.exec(`
         CREATE TABLE positions_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,7 +142,7 @@ const migrations = [
         )
       `)
 
-      db.exec('INSERT INTO positions_new SELECT * FROM positions')
+      db.exec('INSERT INTO positions_new (id, user_id, account, ticker, strike_price, stock_price, option_ticker, quantity, open_date, expiration_date, premium_per_contract, fees, current_option_price, status, closed_at, close_price, created_at, updated_at) SELECT id, user_id, account, ticker, strike_price, stock_price, option_ticker, quantity, open_date, expiration_date, premium_per_contract, fees, current_option_price, status, closed_at, close_price, created_at, updated_at FROM positions')
       db.exec('DROP TABLE positions')
       db.exec('ALTER TABLE positions_new RENAME TO positions')
 
