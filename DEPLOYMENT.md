@@ -21,21 +21,15 @@ Railway is the easiest way to deploy and test your app. Perfect for getting star
 
 ### ⚠️ How to Deploy Updates (Important)
 
-The Railway service must have **Watch Paths cleared** (empty) in its settings, otherwise Railway only detects changes to `/server/**` files and skips client-side changes entirely.
-
 **Standard update process:**
 ```bash
 git add <changed files>
 git commit -m "your message"
 git push origin main
-railway link   # only needed once per machine — select project: options-tracker, env: production, service: server
-railway up
 ```
+Then go to **Railway dashboard → your service → Deployments → Deploy** and trigger a deploy from the latest GitHub commit.
 
-**If `railway up` says "No changed files matched patterns":**
-1. Go to Railway dashboard → your service → **Settings**
-2. Find **Watch Paths** and clear it (leave empty)
-3. Run `railway up` again
+> **Do NOT use `railway up`** — the service has a Watch Paths configuration that blocks uploads of client-side file changes, making it unreliable. Deploying from GitHub via the dashboard always works.
 
 **If the deployment is broken or stale and you need a clean slate:**
 1. Go to Railway dashboard → your service → **Deployments**
