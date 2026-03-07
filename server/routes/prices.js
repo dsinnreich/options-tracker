@@ -51,7 +51,7 @@ router.get('/option/:optionSymbol', async (req, res) => {
 
     res.json({
       optionSymbol: data.optionSymbol[0],
-      price: data.mid ? data.mid[0] : data.last[0],
+      price: data.last[0],
       bid: data.bid[0],
       ask: data.ask[0],
       last: data.last[0],
@@ -91,7 +91,7 @@ router.post('/refresh-all', async (req, res) => {
               `${MARKETDATA_API}/options/quotes/${position.option_ticker}/`
             )
             if (optionData.s === 'ok') {
-              newOptionPrice = optionData.mid ? optionData.mid[0] : optionData.last[0]
+              newOptionPrice = optionData.last[0]
             }
           } catch (optErr) {
             results.errors.push(`Option ${position.option_ticker}: ${optErr.message}`)
