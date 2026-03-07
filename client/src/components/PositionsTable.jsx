@@ -271,8 +271,12 @@ function PositionsTable({ positions, onClose, onDelete }) {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {sortedPositions.map((position) => (
-              <tr key={position.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 whitespace-nowrap">
+              <tr
+                key={position.id}
+                className="hover:bg-blue-50 cursor-pointer"
+                onClick={() => navigate(`/edit/${position.id}`)}
+              >
+                <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                   <input
                     type="checkbox"
                     checked={selectedIds.has(position.id)}
@@ -317,7 +321,7 @@ function PositionsTable({ positions, onClose, onDelete }) {
                 <td className="px-4 py-3 whitespace-nowrap">
                   {getStatusBadge(position.status)}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm">
+                <td className="px-4 py-3 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
                   {closingId === position.id ? (
                     <div className="flex items-center space-x-2">
                       <input
@@ -343,12 +347,6 @@ function PositionsTable({ positions, onClose, onDelete }) {
                     </div>
                   ) : (
                     <div className="flex items-center space-x-3">
-                      <button
-                        onClick={() => navigate(`/edit/${position.id}`)}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        Edit
-                      </button>
                       {position.status === 'Open' && (
                         <>
                           <button

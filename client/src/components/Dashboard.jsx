@@ -1,15 +1,22 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePositions } from '../hooks/usePositions'
 import PositionsTable from './PositionsTable'
 import SummaryCards from './SummaryCards'
 
 function Dashboard() {
   const { positions, loading, error, closePosition, deletePosition, refreshPrices } = usePositions()
-  const [filters, setFilters] = useState({
-    status: 'all',
-    account: 'all',
-    ticker: ''
+  const [filters, setFilters] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dashboardFilters')
+      return saved ? JSON.parse(saved) : { status: 'all', account: 'all', ticker: '' }
+    } catch {
+      return { status: 'all', account: 'all', ticker: '' }
+    }
   })
+
+  useEffect(() => {
+    localStorage.setItem('dashboardFilters', JSON.stringify(filters))
+  }, [filters])
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState(null)
 
