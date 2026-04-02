@@ -4,7 +4,7 @@ import PositionsTable from './PositionsTable'
 import SummaryCards from './SummaryCards'
 
 function Dashboard() {
-  const { positions, loading, error, closePosition, deletePosition, refreshPrices } = usePositions()
+  const { positions, loading, error, closePosition, deletePosition, updateOptionPrice, refreshPrices } = usePositions()
   const [filters, setFilters] = useState(() => {
     try {
       const saved = localStorage.getItem('dashboardFilters')
@@ -153,6 +153,7 @@ function Dashboard() {
         positions={filteredPositions}
         onClose={closePosition}
         onDelete={deletePosition}
+        onUpdateOptionPrice={updateOptionPrice}
       />
     </div>
   )

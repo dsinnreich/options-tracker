@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatCurrency, formatCurrencyWhole, formatPercent } from '../utils/calculations'
 import { format, parseISO } from 'date-fns'
 
-function PositionsTable({ positions, onClose, onDelete }) {
+function PositionsTable({ positions, onClose, onDelete, onUpdateOptionPrice }) {
   const navigate = useNavigate()
   const [sortField, setSortField] = useState('created_at')
   const [sortDirection, setSortDirection] = useState('desc')
@@ -11,6 +11,9 @@ function PositionsTable({ positions, onClose, onDelete }) {
   const [closePrice, setClosePrice] = useState('')
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [importing, setImporting] = useState(false)
+  const [editingPriceId, setEditingPriceId] = useState(null)
+  const [editingPriceValue, setEditingPriceValue] = useState('')
+  const priceEditCancelledRef = useRef(false)
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -255,12 +258,12 @@ function PositionsTable({ positions, onClose, onDelete }) {
                 />
               </th>
               <SortHeader field="ticker">Ticker</SortHeader>
-              <SortHeader field="account">Account</SortHeader>
+              <SortHeader field="option_ticker">Option Ticker</SortHeader>
               <SortHeader field="strike_price">Strike</SortHeader>
-              <SortHeader field="quantity">Qty</SortHeader>
               <SortHeader field="expiration_date">Expiration</SortHeader>
               <SortHeader field="dte">DTE</SortHeader>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Moneyness</th>
+              <SortHeader field="quantity">Qty</SortHeader>
               <SortHeader field="net_premium">Net Premium</SortHeader>
               <SortHeader field="annualized_yield">Ann. Yield</SortHeader>
               <SortHeader field="pnl">P&L</SortHeader>
@@ -288,14 +291,48 @@ function PositionsTable({ positions, onClose, onDelete }) {
                   <div className="font-medium text-gray-900">{position.ticker}</div>
                   <div className="text-xs text-gray-500">{formatCurrency(position.stock_price)}</div>
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                  {position.account}
+                <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                  <div className="font-medium text-gray-900">{position.option_ticker || '—'}</div>
+                  {editingPriceId === position.id ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      autoFocus
+                      value={editingPriceValue}
+                      onChange={e => setEditingPriceValue(e.target.value)}
+                      onBlur={() => {
+                        if (!priceEditCancelledRef.current) {
+                          onUpdateOptionPrice(position.id, parseFloat(editingPriceValue) || 0)
+                        }
+                        priceEditCancelledRef.current = false
+                        setEditingPriceId(null)
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          priceEditCancelledRef.current = true
+                          onUpdateOptionPrice(position.id, parseFloat(editingPriceValue) || 0)
+                          setEditingPriceId(null)
+                        } else if (e.key === 'Escape') {
+                          priceEditCancelledRef.current = true
+                          setEditingPriceId(null)
+                        }
+                      }}
+                      className="w-20 text-xs px-1 py-0.5 border rounded text-gray-500 mt-0.5"
+                    />
+                  ) : (
+                    <div
+                      className="text-xs text-gray-500 cursor-pointer hover:text-blue-600 hover:underline"
+                      onClick={() => {
+                        setEditingPriceId(position.id)
+                        setEditingPriceValue(position.current_option_price ?? '')
+                      }}
+                    >
+                      {position.current_option_price != null ? formatCurrency(position.current_option_price) : '—'}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {formatCurrencyWhole(position.strike_price)}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {position.quantity}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {format(parseISO(position.expiration_date), 'MMM d, yyyy')}
@@ -305,6 +342,9 @@ function PositionsTable({ positions, onClose, onDelete }) {
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   {getMoneynessBadge(position.moneyness)}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  {position.quantity}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {formatCurrencyWhole(position.net_premium)}
