@@ -110,6 +110,23 @@ export function usePositions() {
     }
   }, [fetchPositions])
 
+  const updateOptionPrice = useCallback(async (id, price) => {
+    try {
+      const response = await fetch(`${API_URL}/${id}/option-price`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ current_option_price: price })
+      })
+      if (!response.ok) throw new Error('Failed to update option price')
+      await fetchPositions()
+      return true
+    } catch (err) {
+      setError(err.message)
+      return false
+    }
+  }, [fetchPositions])
+
   const refreshPrices = useCallback(async () => {
     try {
       const response = await fetch('/api/prices/refresh-all', {
@@ -136,6 +153,7 @@ export function usePositions() {
     updatePosition,
     closePosition,
     deletePosition,
+    updateOptionPrice,
     refreshPrices
   }
 }

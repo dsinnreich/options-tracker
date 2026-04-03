@@ -139,6 +139,24 @@ router.put('/:id', (req, res) => {
   }
 })
 
+// Patch option price only
+router.patch('/:id/option-price', (req, res) => {
+  try {
+    const { current_option_price } = req.body
+    const result = db.prepare(`
+      UPDATE positions SET current_option_price = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND user_id = ?
+    `).run(current_option_price, req.params.id, req.session.userId)
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Position not found' })
+    }
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // Close position
 router.put('/:id/close', (req, res) => {
   try {

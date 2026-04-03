@@ -27,7 +27,17 @@
       "Bash(git push:*)",
       "Bash(railway logs:*)",
       "Bash(sqlite3:*)",
-      "Bash(railway up:*)"
+      "Bash(railway up:*)",
+      "Bash(chmod:*)",
+      "Bash(nslookup:*)",
+      "Bash(xattr -cr:*)",
+      "Bash(open \"Options Tracker.app\")",
+      "Bash(git reset:*)",
+      "Bash(railway variables set:*)",
+      "Bash(railway variables:*)",
+      "Bash(railway redeploy:*)",
+      "Bash(railway deploy:*)",
+      "Bash(railway service:*)"
     ]
   }
 }
