@@ -44,6 +44,9 @@ temp/
 # Railway
 .railway/
 
+# Claude Code local settings (machine-specific, not for version control)
+.claude/settings.local.json
+
 # Backup files
 *.backup
 backup-*.db
