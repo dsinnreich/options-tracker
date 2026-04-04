@@ -52,7 +52,7 @@ function Documentation() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Help & Documentation</h1>
         <p className="text-gray-600">
-          Complete guide to understanding calculations, metrics, and roll analysis in your options tracker.
+          Complete guide to understanding calculations, metrics, roll analysis, and portfolio tracking.
         </p>
       </div>
 
@@ -597,6 +597,210 @@ function Documentation() {
                     <div className="text-green-700 font-medium mt-2">This roll aligns with your strategy.</div>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </AccordionSection>
+      </div>
+
+      {/* Portfolio Tracker Section Header */}
+      <div className="mt-10 mb-4">
+        <h2 className="text-2xl font-bold text-gray-900 mb-1">Portfolio Tracker</h2>
+        <p className="text-gray-600">
+          Guide to importing holdings, reading the allocation table, and managing your asset class map.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {/* Portfolio Overview */}
+        <AccordionSection id="portfolio-overview" title="Portfolio Overview" icon="🗂️">
+          <div className="prose prose-sm max-w-none space-y-4">
+            <p className="text-gray-700">
+              The Portfolio tab lets you track your overall asset allocation across one or more Fidelity brokerage accounts. You import a CSV export from Fidelity, and the app organizes your holdings into a hierarchical view by <strong>Asset Class → Style → Individual Holdings</strong>.
+            </p>
+
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Key Concepts</h3>
+              <ul className="space-y-2 text-gray-700">
+                <li><strong>Portfolio</strong> — A named group of accounts (e.g., "Retirement", "Taxable"). You can have up to ~5 portfolios, each with its own import history, asset class map, and target allocations.</li>
+                <li><strong>Import</strong> — A snapshot of your holdings on a given date, loaded from a Fidelity CSV file. Each import is stored separately, so you can look back at historical snapshots.</li>
+                <li><strong>Asset Class Map</strong> — A table you maintain that assigns each ticker symbol to an Asset Class (e.g., Equity) and Style (e.g., Core). This drives all grouping in the pivot table.</li>
+                <li><strong>Target Allocation</strong> — Your desired percentage for each Style. You set these per portfolio and use What-If mode to model changes.</li>
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Navigation</h3>
+              <p className="text-gray-700 mb-2">Each portfolio has three sub-tabs:</p>
+              <ul className="space-y-1 text-gray-700">
+                <li>• <strong>Overview</strong> — The allocation pivot table. Use the date dropdown to view different import snapshots.</li>
+                <li>• <strong>Asset Class Map</strong> — Assign tickers to asset classes and styles. Required for the pivot table to categorize holdings.</li>
+                <li>• <strong>Import</strong> — Upload a new Fidelity CSV and view import history.</li>
+              </ul>
+            </div>
+          </div>
+        </AccordionSection>
+
+        {/* Importing from Fidelity */}
+        <AccordionSection id="portfolio-import" title="Importing from Fidelity" icon="📥">
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              The Portfolio tracker reads the standard CSV export from Fidelity's portfolio view. Here's how to get it and use it.
+            </p>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Step 1 — Export from Fidelity</div>
+              <ol className="text-sm text-gray-700 space-y-1 list-decimal ml-4">
+                <li>Log in to Fidelity and go to your Portfolio page</li>
+                <li>Select the account(s) you want to include</li>
+                <li>Click <strong>Download</strong> (CSV format)</li>
+                <li>Save the file to your computer</li>
+              </ol>
+            </div>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Step 2 — Import into the app</div>
+              <ol className="text-sm text-gray-700 space-y-1 list-decimal ml-4">
+                <li>Go to the <strong>Portfolio</strong> tab and select your portfolio</li>
+                <li>Click the <strong>Import</strong> sub-tab</li>
+                <li>Click <strong>Choose File</strong> and select your Fidelity CSV</li>
+                <li>Click <strong>Import</strong></li>
+              </ol>
+              <p className="text-sm text-gray-600 mt-2">The import is dated automatically. If you import again on the same date, it replaces that day's snapshot.</p>
+            </div>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Import History</div>
+              <p className="text-sm text-gray-700">
+                Every import is saved as a dated snapshot. In the Overview tab, use the date dropdown at the top to switch between snapshots and see how your allocation looked on any past date. You can delete an import from the Import tab if needed.
+              </p>
+            </div>
+
+            <div className="bg-blue-50 rounded-md p-4 border border-blue-200">
+              <div className="font-semibold text-blue-900 mb-1">ℹ️ What gets imported</div>
+              <div className="text-sm text-gray-700 space-y-1">
+                <div>• All positions with a current value are imported, including money market funds and pending activity</div>
+                <div>• Symbols like <strong>FDRXX</strong>, <strong>SPAXX</strong>, <strong>CORE</strong>, <strong>FDIC</strong>, and <strong>PENDING ACTIVITY</strong> are automatically classified as Liquidity / Cash — no mapping needed</div>
+                <div>• All other symbols need an entry in your Asset Class Map to appear correctly in the pivot table</div>
+              </div>
+            </div>
+          </div>
+        </AccordionSection>
+
+        {/* Reading the Pivot Table */}
+        <AccordionSection id="portfolio-pivot" title="Reading the Pivot Table" icon="📊">
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              The Overview tab shows a hierarchical allocation table. Rows are grouped by Asset Class, then Style, then individual holdings. Click any Asset Class or Style row to expand or collapse that group.
+            </p>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-3">Column Reference</div>
+              <div className="space-y-2 text-sm">
+                <div className="grid grid-cols-4 gap-2 font-semibold text-gray-600 border-b pb-1">
+                  <div>Column</div><div className="col-span-3">What it means</div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-gray-700">
+                  <div className="font-medium">Name</div>
+                  <div className="col-span-3">Ticker symbol and description of the holding, style, or asset class</div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-gray-700">
+                  <div className="font-medium">Current Value</div>
+                  <div className="col-span-3">Dollar value from the imported Fidelity CSV</div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-gray-700">
+                  <div className="font-medium">Current %</div>
+                  <div className="col-span-3">This row's value as a percentage of your total portfolio</div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-gray-700">
+                  <div className="font-medium">Target %</div>
+                  <div className="col-span-3">Your desired allocation for this Style (set in What-If mode)</div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-gray-700">
+                  <div className="font-medium">Target $</div>
+                  <div className="col-span-3">Dollar amount you'd need to match your target percentage</div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-gray-700">
+                  <div className="font-medium">$ Diff</div>
+                  <div className="col-span-3">Difference between Current Value and Target $. <span className="text-red-600">Red = under target</span>, <span className="text-green-700">green = over target</span></div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-gray-700">
+                  <div className="font-medium">% Diff</div>
+                  <div className="col-span-3">Difference between Current % and Target % (same color coding)</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">What-If Mode</div>
+              <p className="text-sm text-gray-700 mb-2">
+                Use What-If mode to model target allocation changes before committing them.
+              </p>
+              <ol className="text-sm text-gray-700 space-y-1 list-decimal ml-4">
+                <li>Click <strong>Edit Targets (What-If)</strong></li>
+                <li>Edit the <strong>Target %</strong> fields on any Style row</li>
+                <li>Watch the $ Diff and % Diff columns update in real time</li>
+                <li>The total at the top must equal <strong>100%</strong> to save</li>
+                <li>Click <strong>Save Targets</strong> to persist, or <strong>Cancel</strong> to discard</li>
+              </ol>
+            </div>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Resizing Columns</div>
+              <p className="text-sm text-gray-700">
+                Drag the divider at the right edge of any column header to resize it. Column widths are saved automatically and will persist the next time you visit.
+              </p>
+            </div>
+          </div>
+        </AccordionSection>
+
+        {/* Asset Class Map */}
+        <AccordionSection id="portfolio-map" title="Asset Class Map" icon="🗺️">
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              The Asset Class Map tells the app how to categorize each ticker symbol. Without a mapping, a holding appears as "Unmapped" in the pivot table. You only need to map each symbol once — future imports will use the same map automatically.
+            </p>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Adding a New Mapping</div>
+              <ol className="text-sm text-gray-700 space-y-1 list-decimal ml-4">
+                <li>Go to the <strong>Asset Class Map</strong> sub-tab</li>
+                <li>If there are unmapped symbols from your latest import, they'll appear in an <span className="text-orange-600 font-medium">orange alert</span> at the top — click one to pre-fill the form</li>
+                <li>Enter the <strong>Symbol</strong> (e.g., IVV), optional <strong>Investment Name</strong>, <strong>Asset Class</strong>, and <strong>Style</strong></li>
+                <li>Asset Class and Style fields offer autocomplete suggestions based on your existing mappings — type to filter</li>
+                <li>Click <strong>Add</strong> to save</li>
+              </ol>
+            </div>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Editing and Deleting Mappings</div>
+              <p className="text-sm text-gray-700">
+                Each row in the map table has <strong>Edit</strong> and <strong>Delete</strong> buttons. Click Edit to change the Investment Name, Asset Class, or Style inline, then Save to confirm.
+              </p>
+            </div>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Export &amp; Import the Map</div>
+              <p className="text-sm text-gray-700 mb-2">
+                You can export your entire map as a JSON file — useful as a backup or to copy your mappings to another device.
+              </p>
+              <ul className="text-sm text-gray-700 space-y-1">
+                <li>• <strong>Export Map</strong> — Downloads a JSON file with all your current mappings</li>
+                <li>• <strong>Import Map</strong> — Loads a previously exported JSON file. New symbols are added; existing symbols are updated. Symbols not in the file are left unchanged.</li>
+              </ul>
+            </div>
+
+            <div className="bg-yellow-50 rounded-md p-4 border border-yellow-200">
+              <div className="font-semibold text-yellow-900 mb-1">💡 Tip: Build your map once</div>
+              <div className="text-sm text-gray-700">
+                After your first import, go through the orange unmapped-symbols alert and add each one. After that, future imports from the same accounts will be fully categorized automatically — you'll only need to add mappings when you buy a new holding.
+              </div>
+            </div>
+
+            <div className="bg-blue-50 rounded-md p-4 border border-blue-200">
+              <div className="font-semibold text-blue-900 mb-1">ℹ️ Auto-classified symbols</div>
+              <div className="text-sm text-gray-700">
+                These symbols are always classified as <strong>Liquidity / Cash</strong> without needing a map entry: FDRXX, SPAXX, CORE, FDIC, PENDING ACTIVITY.
               </div>
             </div>
           </div>
