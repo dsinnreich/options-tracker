@@ -57,6 +57,31 @@ function Documentation() {
       </div>
 
       <div className="space-y-3">
+        {/* Technical Overview */}
+        <AccordionSection id="technical" title="Technical Overview" icon="⚙️">
+          <div className="prose prose-sm max-w-none space-y-4 text-gray-700">
+            <p>
+              This app is a custom full-stack web application built specifically for tracking covered call positions and monitoring portfolio allocation. It runs entirely within your own Railway cloud account, meaning your data stays private and is never shared with any third-party service. The app is accessible from any browser and requires a login to use.
+            </p>
+
+            <p>
+              The <strong>backend</strong> is built with <strong>Node.js</strong> and the <strong>Express</strong> framework. It handles all data storage, authentication, and API requests. Data is stored in a <strong>SQLite</strong> database — a lightweight file-based database that lives on a persistent volume in Railway, so your data survives deployments and restarts. The backend exposes a REST API that the frontend calls for all reads and writes. Authentication uses server-side sessions with secure, HTTP-only cookies.
+            </p>
+
+            <p>
+              The <strong>frontend</strong> is a single-page application built with <strong>React</strong> and bundled with <strong>Vite</strong>. Navigation between pages (Dashboard, Portfolio, Help, etc.) is handled client-side by <strong>React Router</strong> — the page never fully reloads when you move between sections. Styling uses <strong>Tailwind CSS</strong>, a utility-first CSS framework that makes it easy to build responsive layouts directly in the component markup. Market data (live stock and option prices) is fetched from the <strong>marketdata.app</strong> API on demand.
+            </p>
+
+            <p>
+              The database schema is managed through a versioned <strong>migration system</strong> built into the app startup. Each time the server starts, it checks the current schema version and applies any pending migrations in order. This allows the app to be updated safely without losing existing data. The current schema includes tables for users, positions, portfolio definitions, portfolio imports, individual holdings, asset class mappings, and target allocations.
+            </p>
+
+            <p>
+              The source code is version-controlled with <strong>Git</strong> and hosted on <strong>GitHub</strong>. Deployments are triggered manually from the <strong>Railway</strong> dashboard by deploying the latest GitHub commit. Local development runs on <strong>http://localhost:5173</strong> using <code className="bg-gray-100 px-1 rounded text-xs">npm run dev</code>, which starts both the Express server and the Vite dev server concurrently.
+            </p>
+          </div>
+        </AccordionSection>
+
         {/* Strategy Overview */}
         <AccordionSection id="strategy" title="Strategy Overview" icon="🎯">
           <div className="prose prose-sm max-w-none space-y-4">
