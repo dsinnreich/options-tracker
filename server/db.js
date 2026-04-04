@@ -149,6 +149,89 @@ const migrations = [
       console.log('✅ Migrated to version 2: Added multi-user authentication')
       console.log('⚠️  Default admin account created: admin@options-tracker.local / changeme')
     }
+  },
+  {
+    version: 3,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS portfolios (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(user_id) REFERENCES users(id),
+          UNIQUE(user_id, name)
+        )
+      `)
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS portfolio_imports (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          portfolio_id INTEGER NOT NULL,
+          import_date TEXT NOT NULL,
+          filename TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(portfolio_id) REFERENCES portfolios(id),
+          UNIQUE(portfolio_id, import_date)
+        )
+      `)
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS portfolio_positions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          import_id INTEGER NOT NULL,
+          account_number TEXT,
+          account_name TEXT,
+          symbol TEXT,
+          description TEXT,
+          quantity REAL,
+          last_price REAL,
+          last_price_change REAL,
+          current_value REAL,
+          today_gain_loss_dollar REAL,
+          today_gain_loss_percent REAL,
+          total_gain_loss_dollar REAL,
+          total_gain_loss_percent REAL,
+          percent_of_account REAL,
+          cost_basis_total REAL,
+          avg_cost_basis REAL,
+          type TEXT,
+          FOREIGN KEY(import_id) REFERENCES portfolio_imports(id)
+        )
+      `)
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS asset_class_map (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          symbol TEXT NOT NULL,
+          investment_name TEXT,
+          asset_class TEXT NOT NULL,
+          style TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(user_id) REFERENCES users(id),
+          UNIQUE(user_id, symbol)
+        )
+      `)
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS portfolio_targets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          portfolio_id INTEGER NOT NULL,
+          asset_class TEXT NOT NULL,
+          style TEXT NOT NULL,
+          target_percent REAL NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(portfolio_id) REFERENCES portfolios(id),
+          UNIQUE(portfolio_id, asset_class, style)
+        )
+      `)
+
+      console.log('✅ Migrated to version 3: Added portfolio tracking tables')
+    }
   }
 ]
 

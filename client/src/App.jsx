@@ -8,6 +8,7 @@ import Login from './components/Login'
 import ResetPassword from './components/ResetPassword'
 import Admin from './components/Admin'
 import ProtectedRoute from './components/ProtectedRoute'
+import PortfolioDashboard from './components/PortfolioDashboard'
 
 function App() {
   return (
@@ -19,12 +20,16 @@ function App() {
           <Layout />
         </ProtectedRoute>
       }>
+        {/* Options section */}
         <Route index element={<Dashboard />} />
         <Route path="add" element={<PositionForm />} />
         <Route path="edit/:id" element={<PositionForm />} />
         <Route path="roll/:id" element={<RollAnalysis />} />
         <Route path="help" element={<Documentation />} />
         <Route path="admin" element={<Admin />} />
+
+        {/* Portfolio section */}
+        <Route path="portfolio" element={<PortfolioDashboard />} />
       </Route>
     </Routes>
   )
