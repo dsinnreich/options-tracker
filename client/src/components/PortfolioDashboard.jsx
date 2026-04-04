@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { usePortfolio } from '../hooks/usePortfolio'
 import PortfolioPivotTable from './PortfolioPivotTable'
 import AssetClassMapEditor from './AssetClassMapEditor'
@@ -31,6 +31,11 @@ export default function PortfolioDashboard() {
   // Portfolio rename
   const [renamingId, setRenamingId] = useState(null)
   const [renameValue, setRenameValue] = useState('')
+
+  // Notes
+  const [noteText, setNoteText] = useState('')
+  const [noteHeight, setNoteHeight] = useState('6rem')
+  const noteRef = useRef(null)
 
   // CSV import
   const [importFile, setImportFile] = useState(null)
@@ -79,6 +84,25 @@ export default function PortfolioDashboard() {
       loadPortfolioData(activePortfolioId)
     }
   }, [activePortfolioId, loadPortfolioData])
+
+  // Load notes and height from localStorage when portfolio changes
+  useEffect(() => {
+    if (!activePortfolioId) return
+    setNoteText(localStorage.getItem(`portfolioNotes_${activePortfolioId}`) || '')
+    setNoteHeight(localStorage.getItem(`portfolioNotesHeight_${activePortfolioId}`) || '6rem')
+  }, [activePortfolioId])
+
+  const handleNoteChange = (e) => {
+    setNoteText(e.target.value)
+    localStorage.setItem(`portfolioNotes_${activePortfolioId}`, e.target.value)
+  }
+
+  const handleNoteResize = () => {
+    if (noteRef.current) {
+      const h = noteRef.current.style.height
+      if (h) localStorage.setItem(`portfolioNotesHeight_${activePortfolioId}`, h)
+    }
+  }
 
   // Switch to a different import date
   const handleImportChange = async (importId) => {
@@ -379,6 +403,20 @@ export default function PortfolioDashboard() {
                   onSaveTargets={handleSaveTargets}
                 />
               )}
+
+              {/* Notes */}
+              <div className="mt-6">
+                <label className="block text-sm font-medium text-gray-600 mb-1">Notes</label>
+                <textarea
+                  ref={noteRef}
+                  value={noteText}
+                  onChange={handleNoteChange}
+                  onMouseUp={handleNoteResize}
+                  style={{ height: noteHeight }}
+                  className="w-full border border-gray-300 rounded-md p-3 text-sm text-gray-700 resize-y focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                  placeholder="Notes on positions and upcoming trades..."
+                />
+              </div>
             </div>
           )}
 
