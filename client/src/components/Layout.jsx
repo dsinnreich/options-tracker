@@ -27,16 +27,6 @@ function Layout() {
               {/* Section tabs */}
               <div className="flex items-center space-x-1">
                 <Link
-                  to="/"
-                  className={`px-4 py-2 rounded-md text-sm font-semibold border transition-colors ${
-                    inOptions
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'text-gray-600 border-transparent hover:bg-gray-100'
-                  }`}
-                >
-                  Options
-                </Link>
-                <Link
                   to="/portfolio"
                   className={`px-4 py-2 rounded-md text-sm font-semibold border transition-colors ${
                     inPortfolio
@@ -46,56 +36,66 @@ function Layout() {
                 >
                   Portfolio
                 </Link>
+                <Link
+                  to="/"
+                  className={`px-4 py-2 rounded-md text-sm font-semibold border transition-colors ${
+                    inOptions
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'text-gray-600 border-transparent hover:bg-gray-100'
+                  }`}
+                >
+                  Options
+                </Link>
               </div>
             </div>
 
             {/* Right: section-specific actions + user */}
             <div className="flex items-center space-x-4">
               {inOptions && (
-                <>
-                  <Link
-                    to="/"
-                    className={`px-3 py-2 rounded-md text-sm font-medium ${
-                      location.pathname === '/'
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                    }`}
-                  >
-                    Dashboard
-                  </Link>
-                  <Link
-                    to="/help"
-                    className={`px-3 py-2 rounded-md text-sm font-medium ${
-                      location.pathname === '/help'
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                    }`}
-                  >
-                    Help
-                  </Link>
-                  {isAdmin && (
-                    <Link
-                      to="/admin"
-                      className={`px-3 py-2 rounded-md text-sm font-medium ${
-                        location.pathname === '/admin'
-                          ? 'bg-gray-100 text-gray-900'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                      }`}
-                    >
-                      Admin
-                    </Link>
-                  )}
-                  <Link
-                    to="/add"
-                    className={`px-3 py-2 rounded-md text-sm font-medium ${
-                      location.pathname === '/add'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-blue-500 text-white hover:bg-blue-600'
-                    }`}
-                  >
-                    + Add Position
-                  </Link>
-                </>
+                <Link
+                  to="/"
+                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                    location.pathname === '/'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  Dashboard
+                </Link>
+              )}
+              <Link
+                to="/help"
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  location.pathname === '/help'
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Help
+              </Link>
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                    location.pathname === '/admin'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  Admin
+                </Link>
+              )}
+              {inOptions && (
+                <Link
+                  to="/add"
+                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                    location.pathname === '/add'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                  }`}
+                >
+                  + Add Position
+                </Link>
               )}
 
               <div className="flex items-center space-x-3 border-l pl-4">
