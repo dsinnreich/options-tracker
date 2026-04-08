@@ -11,7 +11,8 @@ export default function PortfolioDashboard() {
     getPositions,
     getAssetClassMap, addAssetClassMapping, updateAssetClassMapping, deleteAssetClassMapping,
     exportAssetClassMap, importAssetClassMap,
-    getTargets, saveTargets
+    getTargets, saveTargets,
+    getNotes, saveNotes
   } = usePortfolio()
 
   const [activePortfolioId, setActivePortfolioId] = useState(null)
@@ -85,16 +86,22 @@ export default function PortfolioDashboard() {
     }
   }, [activePortfolioId, loadPortfolioData])
 
-  // Load notes and height from localStorage when portfolio changes
+  // Load notes from server when portfolio changes; height stays in localStorage (UI pref only)
   useEffect(() => {
     if (!activePortfolioId) return
-    setNoteText(localStorage.getItem(`portfolioNotes_${activePortfolioId}`) || '')
+    getNotes(activePortfolioId).then(data => setNoteText(data.notes || '')).catch(() => {})
     setNoteHeight(localStorage.getItem(`portfolioNotesHeight_${activePortfolioId}`) || '6rem')
-  }, [activePortfolioId])
+  }, [activePortfolioId, getNotes])
+
+  const noteDebounceRef = useRef(null)
 
   const handleNoteChange = (e) => {
-    setNoteText(e.target.value)
-    localStorage.setItem(`portfolioNotes_${activePortfolioId}`, e.target.value)
+    const value = e.target.value
+    setNoteText(value)
+    clearTimeout(noteDebounceRef.current)
+    noteDebounceRef.current = setTimeout(() => {
+      saveNotes(activePortfolioId, value).catch(() => {})
+    }, 600)
   }
 
   const handleNoteResize = () => {

@@ -161,6 +161,23 @@ export function usePortfolio() {
     return res.json()
   }, [])
 
+  const getNotes = useCallback(async (portfolioId) => {
+    const res = await fetch(`${API}/${portfolioId}/notes`, { credentials: 'include' })
+    if (!res.ok) throw new Error('Failed to fetch notes')
+    return res.json()
+  }, [])
+
+  const saveNotes = useCallback(async (portfolioId, notes) => {
+    const res = await fetch(`${API}/${portfolioId}/notes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ notes })
+    })
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+    return res.json()
+  }, [])
+
   return {
     portfolios, loading, error,
     fetchPortfolios,
@@ -169,6 +186,7 @@ export function usePortfolio() {
     getPositions,
     getAssetClassMap, addAssetClassMapping, updateAssetClassMapping, deleteAssetClassMapping,
     exportAssetClassMap, importAssetClassMap,
-    getTargets, saveTargets
+    getTargets, saveTargets,
+    getNotes, saveNotes
   }
 }

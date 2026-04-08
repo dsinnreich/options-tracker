@@ -232,6 +232,13 @@ const migrations = [
 
       console.log('✅ Migrated to version 3: Added portfolio tracking tables')
     }
+  },
+  {
+    version: 4,
+    up(db) {
+      db.prepare(`ALTER TABLE portfolios ADD COLUMN notes TEXT NOT NULL DEFAULT ''`).run()
+      console.log('✅ Migrated to version 4: Added notes column to portfolios')
+    }
   }
 ]
 

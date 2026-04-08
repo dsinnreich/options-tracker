@@ -431,4 +431,21 @@ router.put('/:id/targets', (req, res) => {
   res.json(saved)
 })
 
+// GET /api/portfolio/:id/notes
+router.get('/:id/notes', (req, res) => {
+  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
+  res.json({ notes: portfolio.notes || '' })
+})
+
+// PUT /api/portfolio/:id/notes — body: { notes: string }
+router.put('/:id/notes', (req, res) => {
+  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
+  const { notes } = req.body
+  if (typeof notes !== 'string') return res.status(400).json({ error: 'notes must be a string' })
+  db.prepare('UPDATE portfolios SET notes = ? WHERE id = ?').run(notes, portfolio.id)
+  res.json({ ok: true })
+})
+
 export default router
