@@ -442,33 +442,59 @@ function extractAccountNumber(filename) {
   return match ? match[1].trim() : name.trim()
 }
 
-// Parse the Fidelity history CSV text → array of { symbol, transaction_type, run_date }
-function parseHistoryCSV(text) {
+// Parse the Fidelity history CSV text
+// Returns { multiAccount: bool, transactions: [{ account_number, symbol, transaction_type, run_date }] }
+// Single-account format: Run Date, Action, Symbol, Description, ...  (account from filename)
+// Multi-account format:  Run Date, Account, Account Number, Action, Symbol, ...
+function parseHistoryCSV(text, fallbackAccountNumber) {
   const allRows = parseCSV(text)
-  // Find header row (first col = "Run Date")
   const headerIdx = allRows.findIndex(r => r[0] === 'Run Date')
   if (headerIdx === -1) throw new Error('Could not find header row in history CSV')
+
+  const header = allRows[headerIdx]
+  // Detect format by checking if "Account Number" column is present
+  const acctNumCol = header.findIndex(h => h.trim() === 'Account Number')
+  const multiAccount = acctNumCol !== -1
+
+  // Column indexes
+  let runDateCol, actionCol, symbolCol
+  if (multiAccount) {
+    // Run Date, Account, Account Number, Action, Symbol, ...
+    runDateCol = 0
+    actionCol  = header.findIndex(h => h.trim() === 'Action')
+    symbolCol  = header.findIndex(h => h.trim() === 'Symbol')
+  } else {
+    // Run Date, Action, Symbol, ...
+    runDateCol = 0
+    actionCol  = 1
+    symbolCol  = 2
+  }
 
   const transactions = []
   for (let i = headerIdx + 1; i < allRows.length; i++) {
     const cols = allRows[i]
-    const runDate = (cols[0] || '').trim()
-    const action  = (cols[1] || '').trim()
-    const symbol  = (cols[2] || '').trim()
+    const runDate = (cols[runDateCol] || '').trim()
+    const action  = (cols[actionCol]  || '').trim()
+    const symbol  = (cols[symbolCol]  || '').trim()
     if (!runDate || !action || !symbol) continue
 
     let type = null
     if (action.startsWith('YOU BOUGHT')) type = 'buy'
     else if (action.startsWith('YOU SOLD'))  type = 'sell'
-    else continue  // skip dividends, loans, etc.
+    else continue  // skip dividends, transfers, etc.
 
-    transactions.push({ symbol, transaction_type: type, run_date: runDate })
+    const accountNumber = multiAccount
+      ? (cols[acctNumCol] || '').trim()
+      : fallbackAccountNumber
+
+    transactions.push({ account_number: accountNumber, symbol, transaction_type: type, run_date: runDate })
   }
-  return transactions
+  return { multiAccount, transactions }
 }
 
 // POST /api/portfolio/:id/history — import a history CSV file
-// Replaces all history for the account extracted from the filename
+// Auto-detects single-account (account from filename) vs multi-account (account from data)
+// Replaces all previous history for each account present in the file
 router.post('/:id/history', (req, res) => {
   const portfolio = getPortfolio(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
@@ -476,30 +502,54 @@ router.post('/:id/history', (req, res) => {
   const { filename, csv } = req.body
   if (!filename || !csv) return res.status(400).json({ error: 'filename and csv are required' })
 
-  const accountNumber = extractAccountNumber(filename)
-  let transactions
+  const fallbackAccount = extractAccountNumber(filename)
+  let parsed
   try {
-    transactions = parseHistoryCSV(csv)
+    parsed = parseHistoryCSV(csv, fallbackAccount)
   } catch (e) {
     return res.status(400).json({ error: e.message })
   }
 
-  // Replace history for this account in this portfolio
+  const { transactions } = parsed
+
+  // Group transactions by account_number
+  const byAccount = {}
+  for (const t of transactions) {
+    if (!byAccount[t.account_number]) byAccount[t.account_number] = []
+    byAccount[t.account_number].push(t)
+  }
+
   const insert = db.prepare(`
     INSERT INTO portfolio_transaction_history (portfolio_id, account_number, symbol, transaction_type, run_date)
     VALUES (?, ?, ?, ?, ?)
   `)
+  const deleteAcct = db.prepare(
+    'DELETE FROM portfolio_transaction_history WHERE portfolio_id = ? AND account_number = ?'
+  )
+
+  // Replace history for each account present in the file
   db.transaction(() => {
-    db.prepare('DELETE FROM portfolio_transaction_history WHERE portfolio_id = ? AND account_number = ?')
-      .run(portfolio.id, accountNumber)
-    for (const t of transactions) {
-      insert.run(portfolio.id, accountNumber, t.symbol, t.transaction_type, t.run_date)
+    for (const [acctNum, rows] of Object.entries(byAccount)) {
+      deleteAcct.run(portfolio.id, acctNum)
+      for (const t of rows) {
+        insert.run(portfolio.id, t.account_number, t.symbol, t.transaction_type, t.run_date)
+      }
     }
   })()
 
+  const accountNumbers = Object.keys(byAccount)
   const buys  = transactions.filter(t => t.transaction_type === 'buy').length
   const sells = transactions.filter(t => t.transaction_type === 'sell').length
-  res.json({ ok: true, accountNumber, total: transactions.length, buys, sells })
+
+  res.json({
+    ok: true,
+    multiAccount: parsed.multiAccount,
+    accountNumbers,
+    accountNumber: accountNumbers.length === 1 ? accountNumbers[0] : null,
+    total: transactions.length,
+    buys,
+    sells
+  })
 })
 
 // GET /api/portfolio/:id/history/last-transactions

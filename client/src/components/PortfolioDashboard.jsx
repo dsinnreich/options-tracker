@@ -594,7 +594,11 @@ export default function PortfolioDashboard() {
 
               {historyResult && (
                 <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md text-green-800 text-sm">
-                  ✓ Imported {historyResult.total} transactions for account {historyResult.accountNumber} ({historyResult.buys} buys, {historyResult.sells} sells)
+                  ✓ Imported {historyResult.total} transactions ({historyResult.buys} buys, {historyResult.sells} sells)
+                  {historyResult.multiAccount
+                    ? ` across ${historyResult.accountNumbers.length} accounts: ${historyResult.accountNumbers.join(', ')}`
+                    : ` for account ${historyResult.accountNumber}`
+                  }
                 </div>
               )}
               {historyError && (
