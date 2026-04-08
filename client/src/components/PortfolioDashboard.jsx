@@ -348,33 +348,58 @@ export default function PortfolioDashboard() {
       {activePortfolio && (
         <>
           {/* Sub-navigation */}
-          <div className="flex items-center gap-6 mb-6 border-b border-gray-100 pb-0">
-            {[
-              { id: 'overview', label: 'Overview' },
-              { id: 'by-account', label: 'By Account' },
-              { id: 'map', label: 'Asset Class Map', badge: unmappedSymbols.length || null },
-              { id: 'import', label: 'Import' }
-            ].map(tab => (
+          <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-0">
+            {/* View tabs — left side */}
+            <div className="flex items-center gap-6">
+              {[
+                { id: 'overview', label: 'By Asset Class' },
+                { id: 'by-account', label: 'By Account' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`text-sm font-medium pb-3 border-b-2 -mb-px transition-colors ${
+                    activeTab === tab.id
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Action buttons — right side */}
+            <div className="flex items-center gap-2 pb-3">
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 text-sm font-medium pb-3 border-b-2 -mb-px transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                onClick={() => setActiveTab('map')}
+                className={`flex items-center gap-1.5 px-3 py-1 text-sm rounded border transition-colors ${
+                  activeTab === 'map'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
                 }`}
               >
-                {tab.label}
-                {tab.badge && (
+                Asset Class Map
+                {unmappedSymbols.length > 0 && (
                   <span className="bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">
-                    {tab.badge}
+                    {unmappedSymbols.length}
                   </span>
                 )}
               </button>
-            ))}
+              <button
+                onClick={() => setActiveTab('import')}
+                className={`px-3 py-1 text-sm rounded border transition-colors ${
+                  activeTab === 'import'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Import
+              </button>
+            </div>
           </div>
 
-          {/* OVERVIEW TAB */}
+          {/* BY ASSET CLASS TAB */}
           {activeTab === 'overview' && (
             <div>
               {imports.length > 0 && (
