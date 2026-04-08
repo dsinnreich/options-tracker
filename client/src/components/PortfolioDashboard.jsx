@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { usePortfolio } from '../hooks/usePortfolio'
 import PortfolioPivotTable from './PortfolioPivotTable'
+import PortfolioByAccount from './PortfolioByAccount'
 import AssetClassMapEditor from './AssetClassMapEditor'
 
 export default function PortfolioDashboard() {
@@ -350,6 +351,7 @@ export default function PortfolioDashboard() {
           <div className="flex items-center gap-6 mb-6 border-b border-gray-100 pb-0">
             {[
               { id: 'overview', label: 'Overview' },
+              { id: 'by-account', label: 'By Account' },
               { id: 'map', label: 'Asset Class Map', badge: unmappedSymbols.length || null },
               { id: 'import', label: 'Import' }
             ].map(tab => (
@@ -424,6 +426,31 @@ export default function PortfolioDashboard() {
                   placeholder="Notes on positions and upcoming trades..."
                 />
               </div>
+            </div>
+          )}
+
+          {/* BY ACCOUNT TAB */}
+          {activeTab === 'by-account' && (
+            <div>
+              {imports.length > 0 && (
+                <div className="flex items-center gap-3 mb-5">
+                  <label className="text-sm font-medium text-gray-600">Showing data for:</label>
+                  <select
+                    value={selectedImportId || ''}
+                    onChange={e => handleImportChange(Number(e.target.value))}
+                    className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  >
+                    {imports.map(imp => (
+                      <option key={imp.id} value={imp.id}>{imp.import_date}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {dataLoading ? (
+                <div className="flex items-center justify-center h-48 text-gray-400">Loading...</div>
+              ) : (
+                <PortfolioByAccount positions={positions} />
+              )}
             </div>
           )}
 
