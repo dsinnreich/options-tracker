@@ -13,7 +13,8 @@ export default function PortfolioDashboard() {
     getAssetClassMap, addAssetClassMapping, updateAssetClassMapping, deleteAssetClassMapping,
     exportAssetClassMap, importAssetClassMap,
     getTargets, saveTargets,
-    getNotes, saveNotes
+    getNotes, saveNotes,
+    importHistory, getHistoryAccounts, getLastTransactions
   } = usePortfolio()
 
   const [activePortfolioId, setActivePortfolioId] = useState(null)
@@ -38,6 +39,14 @@ export default function PortfolioDashboard() {
   const [noteText, setNoteText] = useState('')
   const [noteHeight, setNoteHeight] = useState('6rem')
   const noteRef = useRef(null)
+
+  // Transaction history
+  const [lastTransactions, setLastTransactions] = useState({})
+  const [historyAccounts, setHistoryAccounts] = useState([])
+  const [historyFile, setHistoryFile] = useState(null)
+  const [importingHistory, setImportingHistory] = useState(false)
+  const [historyResult, setHistoryResult] = useState(null)
+  const [historyError, setHistoryError] = useState(null)
 
   // CSV import
   const [importFile, setImportFile] = useState(null)
@@ -93,6 +102,25 @@ export default function PortfolioDashboard() {
     getNotes(activePortfolioId).then(data => setNoteText(data.notes || '')).catch(() => {})
     setNoteHeight(localStorage.getItem(`portfolioNotesHeight_${activePortfolioId}`) || '6rem')
   }, [activePortfolioId, getNotes])
+
+  // Load last transactions and history accounts when portfolio changes
+  const loadHistoryData = useCallback(async (portfolioId) => {
+    if (!portfolioId) return
+    try {
+      const [txns, accts] = await Promise.all([
+        getLastTransactions(portfolioId),
+        getHistoryAccounts(portfolioId)
+      ])
+      setLastTransactions(txns)
+      setHistoryAccounts(accts)
+    } catch (err) {
+      console.error('Failed to load history data:', err)
+    }
+  }, [getLastTransactions, getHistoryAccounts])
+
+  useEffect(() => {
+    if (activePortfolioId) loadHistoryData(activePortfolioId)
+  }, [activePortfolioId, loadHistoryData])
 
   const noteDebounceRef = useRef(null)
 
@@ -171,6 +199,9 @@ export default function PortfolioDashboard() {
     setImportResult(null)
     setImportError(null)
     setImportFile(null)
+    setHistoryResult(null)
+    setHistoryError(null)
+    setHistoryFile(null)
   }
 
   // --- CSV Import ---
@@ -192,6 +223,26 @@ export default function PortfolioDashboard() {
       setImportError(err.message)
     } finally {
       setImporting(false)
+    }
+  }
+
+  // --- History Import ---
+  const handleImportHistory = async () => {
+    if (!historyFile || !activePortfolioId) return
+    setImportingHistory(true)
+    setHistoryResult(null)
+    setHistoryError(null)
+    try {
+      const result = await importHistory(activePortfolioId, historyFile)
+      setHistoryResult(result)
+      setHistoryFile(null)
+      const el = document.getElementById('history-upload')
+      if (el) el.value = ''
+      await loadHistoryData(activePortfolioId)
+    } catch (err) {
+      setHistoryError(err.message)
+    } finally {
+      setImportingHistory(false)
     }
   }
 
@@ -387,6 +438,16 @@ export default function PortfolioDashboard() {
                 )}
               </button>
               <button
+                onClick={() => setActiveTab('history')}
+                className={`px-3 py-1 text-sm rounded border transition-colors ${
+                  activeTab === 'history'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                History
+              </button>
+              <button
                 onClick={() => setActiveTab('import')}
                 className={`px-3 py-1 text-sm rounded border transition-colors ${
                   activeTab === 'import'
@@ -474,7 +535,7 @@ export default function PortfolioDashboard() {
               {dataLoading ? (
                 <div className="flex items-center justify-center h-48 text-gray-400">Loading...</div>
               ) : (
-                <PortfolioByAccount positions={positions} />
+                <PortfolioByAccount positions={positions} lastTransactions={lastTransactions} />
               )}
             </div>
           )}
@@ -491,6 +552,86 @@ export default function PortfolioDashboard() {
               onExport={exportAssetClassMap}
               onImport={async (data) => { await importAssetClassMap(data); await refreshMap() }}
             />
+          )}
+
+          {/* HISTORY TAB */}
+          {activeTab === 'history' && (
+            <div className="max-w-2xl">
+              <h2 className="text-base font-semibold text-gray-800 mb-1">Import Transaction History</h2>
+              <p className="text-sm text-gray-500 mb-5">
+                Upload a Fidelity transaction history CSV (e.g. <code className="bg-gray-100 px-1 rounded">History_for_Account_X12345678.csv</code>).
+                Importing replaces all previous history for that account.
+              </p>
+
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 mb-4 text-center hover:border-blue-400 transition-colors">
+                <input
+                  type="file"
+                  accept=".csv"
+                  id="history-upload"
+                  className="hidden"
+                  onChange={e => {
+                    setHistoryFile(e.target.files[0] || null)
+                    setHistoryResult(null)
+                    setHistoryError(null)
+                  }}
+                />
+                <label htmlFor="history-upload" className="cursor-pointer block">
+                  {historyFile ? (
+                    <span className="text-blue-600 font-medium text-sm">{historyFile.name}</span>
+                  ) : (
+                    <span className="text-gray-400 text-sm">Click to select a history CSV file</span>
+                  )}
+                </label>
+              </div>
+
+              <button
+                onClick={handleImportHistory}
+                disabled={!historyFile || importingHistory}
+                className="px-5 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+              >
+                {importingHistory ? 'Importing...' : 'Import History'}
+              </button>
+
+              {historyResult && (
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md text-green-800 text-sm">
+                  ✓ Imported {historyResult.total} transactions for account {historyResult.accountNumber} ({historyResult.buys} buys, {historyResult.sells} sells)
+                </div>
+              )}
+              {historyError && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+                  Error: {historyError}
+                </div>
+              )}
+
+              {/* Accounts with history */}
+              {historyAccounts.length > 0 && (
+                <div className="mt-8">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Imported History by Account</h3>
+                  <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="text-left px-4 py-2.5 font-medium text-gray-600">Account</th>
+                          <th className="text-right px-4 py-2.5 font-medium text-gray-600">Transactions</th>
+                          <th className="text-right px-4 py-2.5 font-medium text-gray-600">Date Range</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {historyAccounts.map(acct => (
+                          <tr key={acct.account_number} className="hover:bg-gray-50">
+                            <td className="px-4 py-2.5 font-medium text-gray-800">{acct.account_number}</td>
+                            <td className="px-4 py-2.5 text-right text-gray-600">{acct.total.toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right text-gray-500 text-xs">
+                              {acct.earliest} – {acct.latest}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* IMPORT TAB */}

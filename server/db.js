@@ -239,6 +239,25 @@ const migrations = [
       db.prepare(`ALTER TABLE portfolios ADD COLUMN notes TEXT NOT NULL DEFAULT ''`).run()
       console.log('✅ Migrated to version 4: Added notes column to portfolios')
     }
+  },
+  {
+    version: 5,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS portfolio_transaction_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+          account_number TEXT NOT NULL,
+          symbol TEXT NOT NULL,
+          transaction_type TEXT NOT NULL,
+          run_date TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_txn_history_lookup
+          ON portfolio_transaction_history(portfolio_id, account_number, symbol);
+      `)
+      console.log('✅ Migrated to version 5: Added portfolio_transaction_history table')
+    }
   }
 ]
 

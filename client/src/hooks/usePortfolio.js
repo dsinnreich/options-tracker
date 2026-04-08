@@ -161,6 +161,30 @@ export function usePortfolio() {
     return res.json()
   }, [])
 
+  const importHistory = useCallback(async (portfolioId, file) => {
+    const csv = await file.text()
+    const res = await fetch(`${API}/${portfolioId}/history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ filename: file.name, csv })
+    })
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+    return res.json()
+  }, [])
+
+  const getHistoryAccounts = useCallback(async (portfolioId) => {
+    const res = await fetch(`${API}/${portfolioId}/history/accounts`, { credentials: 'include' })
+    if (!res.ok) throw new Error('Failed to fetch history accounts')
+    return res.json()
+  }, [])
+
+  const getLastTransactions = useCallback(async (portfolioId) => {
+    const res = await fetch(`${API}/${portfolioId}/history/last-transactions`, { credentials: 'include' })
+    if (!res.ok) throw new Error('Failed to fetch last transactions')
+    return res.json()
+  }, [])
+
   const getNotes = useCallback(async (portfolioId) => {
     const res = await fetch(`${API}/${portfolioId}/notes`, { credentials: 'include' })
     if (!res.ok) throw new Error('Failed to fetch notes')
@@ -187,6 +211,7 @@ export function usePortfolio() {
     getAssetClassMap, addAssetClassMapping, updateAssetClassMapping, deleteAssetClassMapping,
     exportAssetClassMap, importAssetClassMap,
     getTargets, saveTargets,
-    getNotes, saveNotes
+    getNotes, saveNotes,
+    importHistory, getHistoryAccounts, getLastTransactions
   }
 }

@@ -1,4 +1,4 @@
-function PortfolioByAccount({ positions }) {
+function PortfolioByAccount({ positions, lastTransactions = {} }) {
   if (!positions || positions.length === 0) {
     return (
       <div className="text-center py-20 text-gray-400">
@@ -55,6 +55,8 @@ function PortfolioByAccount({ positions }) {
                     <th className="text-right px-4 py-2 font-medium">Qty</th>
                     <th className="text-right px-4 py-2 font-medium">Current Value</th>
                     <th className="text-right px-4 py-2 font-medium">% of Account</th>
+                    <th className="text-right px-4 py-2 font-medium">Last Buy Date</th>
+                    <th className="text-right px-4 py-2 font-medium">Last Sale Date</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -65,6 +67,8 @@ function PortfolioByAccount({ positions }) {
                       const pctOfAccount = accountTotal > 0
                         ? (pos.current_value / accountTotal) * 100
                         : 0
+                      const acctTxns = lastTransactions[pos.account_number] || {}
+                      const symTxns  = acctTxns[pos.symbol] || {}
                       return (
                         <tr
                           key={i}
@@ -75,6 +79,8 @@ function PortfolioByAccount({ positions }) {
                           <td className="px-4 py-2 text-right text-gray-700">{pos.quantity}</td>
                           <td className="px-4 py-2 text-right text-gray-800">{fmt(pos.current_value)}</td>
                           <td className="px-4 py-2 text-right text-gray-500">{fmtPct(pctOfAccount)}</td>
+                          <td className="px-4 py-2 text-right text-gray-500">{symTxns.lastBuy  || '—'}</td>
+                          <td className="px-4 py-2 text-right text-gray-500">{symTxns.lastSell || '—'}</td>
                         </tr>
                       )
                     })}

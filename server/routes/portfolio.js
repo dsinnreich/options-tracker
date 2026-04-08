@@ -431,6 +431,120 @@ router.put('/:id/targets', (req, res) => {
   res.json(saved)
 })
 
+// ---------------------------------------------------------------------------
+// Transaction History
+// ---------------------------------------------------------------------------
+
+// Extract account number from filename e.g. "History_for_Account_X66856330-2.csv" → "X66856330"
+function extractAccountNumber(filename) {
+  const name = filename.replace(/\.csv$/i, '')
+  const match = name.match(/History_for_Account_(.+?)(?:-\d+)?$/)
+  return match ? match[1].trim() : name.trim()
+}
+
+// Parse the Fidelity history CSV text → array of { symbol, transaction_type, run_date }
+function parseHistoryCSV(text) {
+  const allRows = parseCSV(text)
+  // Find header row (first col = "Run Date")
+  const headerIdx = allRows.findIndex(r => r[0] === 'Run Date')
+  if (headerIdx === -1) throw new Error('Could not find header row in history CSV')
+
+  const transactions = []
+  for (let i = headerIdx + 1; i < allRows.length; i++) {
+    const cols = allRows[i]
+    const runDate = (cols[0] || '').trim()
+    const action  = (cols[1] || '').trim()
+    const symbol  = (cols[2] || '').trim()
+    if (!runDate || !action || !symbol) continue
+
+    let type = null
+    if (action.startsWith('YOU BOUGHT')) type = 'buy'
+    else if (action.startsWith('YOU SOLD'))  type = 'sell'
+    else continue  // skip dividends, loans, etc.
+
+    transactions.push({ symbol, transaction_type: type, run_date: runDate })
+  }
+  return transactions
+}
+
+// POST /api/portfolio/:id/history — import a history CSV file
+// Replaces all history for the account extracted from the filename
+router.post('/:id/history', (req, res) => {
+  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
+
+  const { filename, csv } = req.body
+  if (!filename || !csv) return res.status(400).json({ error: 'filename and csv are required' })
+
+  const accountNumber = extractAccountNumber(filename)
+  let transactions
+  try {
+    transactions = parseHistoryCSV(csv)
+  } catch (e) {
+    return res.status(400).json({ error: e.message })
+  }
+
+  // Replace history for this account in this portfolio
+  const insert = db.prepare(`
+    INSERT INTO portfolio_transaction_history (portfolio_id, account_number, symbol, transaction_type, run_date)
+    VALUES (?, ?, ?, ?, ?)
+  `)
+  db.transaction(() => {
+    db.prepare('DELETE FROM portfolio_transaction_history WHERE portfolio_id = ? AND account_number = ?')
+      .run(portfolio.id, accountNumber)
+    for (const t of transactions) {
+      insert.run(portfolio.id, accountNumber, t.symbol, t.transaction_type, t.run_date)
+    }
+  })()
+
+  const buys  = transactions.filter(t => t.transaction_type === 'buy').length
+  const sells = transactions.filter(t => t.transaction_type === 'sell').length
+  res.json({ ok: true, accountNumber, total: transactions.length, buys, sells })
+})
+
+// GET /api/portfolio/:id/history/last-transactions
+// Returns { [accountNumber]: { [symbol]: { lastBuy, lastSell } } }
+router.get('/:id/history/last-transactions', (req, res) => {
+  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
+
+  const rows = db.prepare(`
+    SELECT account_number, symbol, transaction_type, MAX(run_date) as latest_date
+    FROM portfolio_transaction_history
+    WHERE portfolio_id = ?
+    GROUP BY account_number, symbol, transaction_type
+  `).all(portfolio.id)
+
+  // Shape into nested lookup: { accountNumber: { symbol: { lastBuy, lastSell } } }
+  const result = {}
+  for (const row of rows) {
+    if (!result[row.account_number]) result[row.account_number] = {}
+    if (!result[row.account_number][row.symbol]) result[row.account_number][row.symbol] = {}
+    if (row.transaction_type === 'buy')  result[row.account_number][row.symbol].lastBuy  = row.latest_date
+    if (row.transaction_type === 'sell') result[row.account_number][row.symbol].lastSell = row.latest_date
+  }
+  res.json(result)
+})
+
+// GET /api/portfolio/:id/history/accounts — list accounts with imported history
+router.get('/:id/history/accounts', (req, res) => {
+  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
+
+  const rows = db.prepare(`
+    SELECT account_number,
+           COUNT(*) as total,
+           SUM(transaction_type = 'buy')  as buys,
+           SUM(transaction_type = 'sell') as sells,
+           MIN(run_date) as earliest,
+           MAX(run_date) as latest
+    FROM portfolio_transaction_history
+    WHERE portfolio_id = ?
+    GROUP BY account_number
+  `).all(portfolio.id)
+  res.json(rows)
+})
+
 // GET /api/portfolio/:id/notes
 router.get('/:id/notes', (req, res) => {
   const portfolio = getPortfolio(req.params.id, req.session.userId)
