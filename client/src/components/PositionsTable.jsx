@@ -369,6 +369,14 @@ function PositionsTable({ positions, onClose, onDelete, onUpdateOptionPrice }) {
                         </button>
                       </>
                     )}
+                    {position.status === 'Closed' && (
+                      <button
+                        onClick={() => navigate(`/edit/${position.id}`)}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        Edit
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         if (confirm('Are you sure you want to delete this position?')) {
