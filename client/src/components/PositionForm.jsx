@@ -104,6 +104,7 @@ function PositionForm() {
       premium_per_contract: '',
       fees: 0,
       current_option_price: 0,
+      status: 'Open',
       close_date: '',
       close_price: '',
       close_fees: 0
@@ -129,6 +130,7 @@ function PositionForm() {
             premium_per_contract: position.premium_per_contract,
             fees: position.fees || 0,
             current_option_price: position.current_option_price || 0,
+            status: position.status || 'Open',
             close_date: position.close_date || '',
             close_price: position.close_price ?? '',
             close_fees: position.close_fees || 0
