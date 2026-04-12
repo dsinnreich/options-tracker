@@ -7,8 +7,6 @@ function PositionsTable({ positions, onClose, onDelete, onUpdateOptionPrice }) {
   const navigate = useNavigate()
   const [sortField, setSortField] = useState('created_at')
   const [sortDirection, setSortDirection] = useState('desc')
-  const [closingId, setClosingId] = useState(null)
-  const [closePrice, setClosePrice] = useState('')
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [importing, setImporting] = useState(false)
   const [editingPriceId, setEditingPriceId] = useState(null)
@@ -38,14 +36,6 @@ function PositionsTable({ positions, onClose, onDelete, onUpdateOptionPrice }) {
     }
     return aVal < bVal ? 1 : -1
   })
-
-  const handleClosePosition = (id) => {
-    if (closePrice !== '') {
-      onClose(id, parseFloat(closePrice))
-      setClosingId(null)
-      setClosePrice('')
-    }
-  }
 
   const toggleSelection = (id) => {
     const newSelected = new Set(selectedIds)
@@ -362,59 +352,34 @@ function PositionsTable({ positions, onClose, onDelete, onUpdateOptionPrice }) {
                   {getStatusBadge(position.status)}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
-                  {closingId === position.id ? (
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={closePrice}
-                        onChange={(e) => setClosePrice(e.target.value)}
-                        placeholder="Close price"
-                        className="w-20 px-2 py-1 border rounded text-sm"
-                      />
-                      <button
-                        onClick={() => handleClosePosition(position.id)}
-                        className="text-green-600 hover:text-green-800"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => { setClosingId(null); setClosePrice(''); }}
-                        className="text-gray-600 hover:text-gray-800"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-3">
-                      {position.status === 'Open' && (
-                        <>
-                          <button
-                            onClick={() => navigate(`/roll/${position.id}`)}
-                            className="text-purple-600 hover:text-purple-800"
-                          >
-                            Roll
-                          </button>
-                          <button
-                            onClick={() => setClosingId(position.id)}
-                            className="text-yellow-600 hover:text-yellow-800"
-                          >
-                            Close
-                          </button>
-                        </>
-                      )}
-                      <button
-                        onClick={() => {
-                          if (confirm('Are you sure you want to delete this position?')) {
-                            onDelete(position.id)
-                          }
-                        }}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex items-center space-x-3">
+                    {position.status === 'Open' && (
+                      <>
+                        <button
+                          onClick={() => navigate(`/roll/${position.id}`)}
+                          className="text-purple-600 hover:text-purple-800"
+                        >
+                          Roll
+                        </button>
+                        <button
+                          onClick={() => navigate(`/close/${position.id}`)}
+                          className="text-yellow-600 hover:text-yellow-800"
+                        >
+                          Close
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (confirm('Are you sure you want to delete this position?')) {
+                          onDelete(position.id)
+                        }
+                      }}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

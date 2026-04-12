@@ -258,6 +258,22 @@ const migrations = [
       `)
       console.log('✅ Migrated to version 5: Added portfolio_transaction_history table')
     }
+  },
+  {
+    version: 6,
+    up(db) {
+      try {
+        db.exec('ALTER TABLE positions ADD COLUMN close_fees REAL DEFAULT 0')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name')) throw err
+      }
+      try {
+        db.exec('ALTER TABLE positions ADD COLUMN close_date TEXT')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name')) throw err
+      }
+      console.log('✅ Migrated to version 6: Added close_fees and close_date to positions')
+    }
   }
 ]
 

@@ -78,13 +78,13 @@ export function usePositions() {
     }
   }, [fetchPositions])
 
-  const closePosition = useCallback(async (id, closePrice) => {
+  const closePosition = useCallback(async (id, { close_price, close_fees, close_date }) => {
     try {
       const response = await fetch(`${API_URL}/${id}/close`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ close_price: closePrice })
+        body: JSON.stringify({ close_price, close_fees, close_date })
       })
       if (!response.ok) throw new Error('Failed to close position')
       await fetchPositions()

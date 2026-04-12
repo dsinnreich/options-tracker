@@ -87,7 +87,10 @@ router.put('/:id', (req, res) => {
       premium_per_contract,
       fees,
       current_option_price,
-      status
+      status,
+      close_price,
+      close_fees,
+      close_date
     } = req.body
 
     const stmt = db.prepare(`
@@ -104,6 +107,9 @@ router.put('/:id', (req, res) => {
         fees = ?,
         current_option_price = ?,
         status = ?,
+        close_price = ?,
+        close_fees = ?,
+        close_date = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND user_id = ?
     `)
@@ -121,6 +127,9 @@ router.put('/:id', (req, res) => {
       fees || 0,
       current_option_price || 0,
       status || 'Open',
+      close_price != null ? close_price : null,
+      close_fees || 0,
+      close_date || null,
       req.params.id,
       req.session.userId
     )
@@ -160,18 +169,20 @@ router.patch('/:id/option-price', (req, res) => {
 // Close position
 router.put('/:id/close', (req, res) => {
   try {
-    const { close_price } = req.body
+    const { close_price, close_fees, close_date } = req.body
 
     const stmt = db.prepare(`
       UPDATE positions SET
         status = 'Closed',
         closed_at = CURRENT_TIMESTAMP,
         close_price = ?,
+        close_fees = ?,
+        close_date = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND user_id = ?
     `)
 
-    const result = stmt.run(close_price || 0, req.params.id, req.session.userId)
+    const result = stmt.run(close_price || 0, close_fees || 0, close_date || null, req.params.id, req.session.userId)
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Position not found' })

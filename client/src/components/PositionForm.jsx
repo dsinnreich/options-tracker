@@ -103,7 +103,10 @@ function PositionForm() {
       expiration_date: '',
       premium_per_contract: '',
       fees: 0,
-      current_option_price: 0
+      current_option_price: 0,
+      close_date: '',
+      close_price: '',
+      close_fees: 0
     }
   })
 
@@ -125,7 +128,10 @@ function PositionForm() {
             expiration_date: position.expiration_date,
             premium_per_contract: position.premium_per_contract,
             fees: position.fees || 0,
-            current_option_price: position.current_option_price || 0
+            current_option_price: position.current_option_price || 0,
+            close_date: position.close_date || '',
+            close_price: position.close_price ?? '',
+            close_fees: position.close_fees || 0
           })
         }
         setLoading(false)
@@ -218,7 +224,10 @@ function PositionForm() {
       quantity: parseInt(data.quantity),
       premium_per_contract: parseFloat(data.premium_per_contract),
       fees: parseFloat(data.fees) || 0,
-      current_option_price: parseFloat(data.current_option_price) || 0
+      current_option_price: parseFloat(data.current_option_price) || 0,
+      close_price: data.close_price !== '' ? parseFloat(data.close_price) : null,
+      close_fees: parseFloat(data.close_fees) || 0,
+      close_date: data.close_date || null
     }
 
     const success = id
@@ -414,6 +423,42 @@ function PositionForm() {
               className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
               placeholder="0.000"
             />
+          </div>
+        )}
+
+        {id && watchedFields.status === 'Closed' && (
+          <div className="border-t pt-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Close Details</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Close Date</label>
+                <input
+                  type="date"
+                  {...register('close_date')}
+                  className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Close Price (per contract)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  {...register('close_price')}
+                  className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Close Fees</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  {...register('close_fees')}
+                  className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
           </div>
         )}
 
