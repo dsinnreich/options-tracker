@@ -114,10 +114,10 @@ export function unrealizedPnL(premiumPerContract, currentOptionPrice, quantity, 
 /**
  * Calculate realized P&L for closed position
  */
-export function realizedPnL(premiumPerContract, closePrice, quantity, fees = 0) {
+export function realizedPnL(premiumPerContract, closePrice, quantity, fees = 0, closeFees = 0) {
   const received = netPremium(premiumPerContract, quantity, fees)
   const closeCost = closePrice * quantity * 100
-  return received - closeCost
+  return received - closeCost - closeFees
 }
 
 /**
@@ -137,7 +137,8 @@ export function calculatePnL(position) {
       position.premium_per_contract,
       position.close_price || 0,
       position.quantity,
-      position.fees
+      position.fees,
+      position.close_fees || 0
     )
   }
   return unrealizedPnL(
