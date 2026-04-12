@@ -321,6 +321,48 @@ const migrations = [
 
       console.log('✅ Migrated to version 7: Added ETF research tables')
     }
+  },
+  {
+    version: 8,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS etf_watchlists (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(user_id) REFERENCES users(id),
+          UNIQUE(user_id, name)
+        )
+      `)
+
+      try {
+        db.exec('ALTER TABLE etf_research_imports ADD COLUMN watchlist_id INTEGER REFERENCES etf_watchlists(id)')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name')) throw err
+      }
+
+      // Migrate any existing imports: create a default watchlist and assign them
+      const users = db.prepare(
+        'SELECT DISTINCT user_id FROM etf_research_imports WHERE watchlist_id IS NULL'
+      ).all()
+      for (const { user_id } of users) {
+        const result = db.prepare(
+          "INSERT OR IGNORE INTO etf_watchlists (user_id, name) VALUES (?, 'My ETFs')"
+        ).run(user_id)
+        const wl = db.prepare(
+          "SELECT id FROM etf_watchlists WHERE user_id = ? AND name = 'My ETFs'"
+        ).get(user_id)
+        if (wl) {
+          db.prepare(
+            'UPDATE etf_research_imports SET watchlist_id = ? WHERE user_id = ? AND watchlist_id IS NULL'
+          ).run(wl.id, user_id)
+        }
+      }
+
+      console.log('✅ Migrated to version 8: Added etf_watchlists and linked imports')
+    }
   }
 ]
 

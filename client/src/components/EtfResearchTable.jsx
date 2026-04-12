@@ -1,24 +1,25 @@
 import { useState, useMemo } from 'react'
 
+// best: 'high' = highest wins, 'low' = lowest wins, null = no ranking
 const COLUMNS = [
   { key: 'ticker', label: 'Ticker', type: 'text', sticky: true },
   { key: 'name', label: 'Name', type: 'text', width: 240 },
-  { key: 'std_dev_3y', label: 'Std Dev', sub: '3Y Monthly', type: 'number', decimals: 2 },
-  { key: 'sharpe_ratio_3y', label: 'Sharpe Ratio', sub: '3Y Monthly', type: 'number', decimals: 2 },
-  { key: 'alpha_3y', label: 'Alpha', sub: '3Y Monthly', type: 'number', decimals: 2 },
-  { key: 'morningstar_rating', label: 'Morningstar', sub: 'Rating', type: 'stars' },
+  { key: 'std_dev_3y', label: 'Std Dev', sub: '3Y Monthly', type: 'number', decimals: 2, best: 'low' },
+  { key: 'sharpe_ratio_3y', label: 'Sharpe Ratio', sub: '3Y Monthly', type: 'number', decimals: 2, best: 'high' },
+  { key: 'alpha_3y', label: 'Alpha', sub: '3Y Monthly', type: 'number', decimals: 2, best: 'high' },
+  { key: 'morningstar_rating', label: 'Morningstar', sub: 'Rating', type: 'stars', best: 'high' },
   { key: 'beta_3y', label: 'Beta', sub: '3Y Monthly', type: 'number', decimals: 2 },
-  { key: 'total_return_1m', label: 'Return', sub: '1 Month', type: 'percent', decimals: 2 },
-  { key: 'total_return_3m', label: 'Return', sub: '3 Month', type: 'percent', decimals: 2 },
-  { key: 'total_return_6m', label: 'Return', sub: '6 Month', type: 'percent', decimals: 2 },
-  { key: 'total_return_ytd', label: 'Return', sub: 'YTD', type: 'percent', decimals: 2 },
-  { key: 'total_return_1y', label: 'Return', sub: '1 Year', type: 'percent', decimals: 2 },
-  { key: 'total_return_3y', label: 'Return', sub: '3 Year', type: 'percent', decimals: 2 },
-  { key: 'total_return_5y', label: 'Return', sub: '5 Year', type: 'percent', decimals: 2 },
-  { key: 'downside_capture_3y', label: 'Downside', sub: 'Capture 3Y', type: 'number', decimals: 2 },
-  { key: 'sec_yield', label: 'SEC Yield', sub: '30-Day', type: 'percent', decimals: 2 },
-  { key: 'tax_cost_3y', label: 'Tax Cost', sub: '3Y', type: 'percent', decimals: 2 },
-  { key: 'expense_ratio', label: 'Expense', sub: 'Ratio', type: 'percent', decimals: 2 },
+  { key: 'total_return_1m', label: 'Return', sub: '1 Month', type: 'percent', decimals: 2, best: 'high' },
+  { key: 'total_return_3m', label: 'Return', sub: '3 Month', type: 'percent', decimals: 2, best: 'high' },
+  { key: 'total_return_6m', label: 'Return', sub: '6 Month', type: 'percent', decimals: 2, best: 'high' },
+  { key: 'total_return_ytd', label: 'Return', sub: 'YTD', type: 'percent', decimals: 2, best: 'high' },
+  { key: 'total_return_1y', label: 'Return', sub: '1 Year', type: 'percent', decimals: 2, best: 'high' },
+  { key: 'total_return_3y', label: 'Return', sub: '3 Year', type: 'percent', decimals: 2, best: 'high' },
+  { key: 'total_return_5y', label: 'Return', sub: '5 Year', type: 'percent', decimals: 2, best: 'high' },
+  { key: 'downside_capture_3y', label: 'Downside', sub: 'Capture 3Y', type: 'number', decimals: 2, best: 'low' },
+  { key: 'sec_yield', label: 'SEC Yield', sub: '30-Day', type: 'percent', decimals: 2, best: 'high' },
+  { key: 'tax_cost_3y', label: 'Tax Cost', sub: '3Y', type: 'percent', decimals: 2, best: 'low' },
+  { key: 'expense_ratio', label: 'Expense', sub: 'Ratio', type: 'percent', decimals: 2, best: 'low' },
   { key: 'category', label: 'Category', type: 'text' },
   { key: 'style_box', label: 'Style Box', type: 'text' },
   { key: 'medalist_rating', label: 'Medalist', type: 'text' }
@@ -102,6 +103,19 @@ function EtfResearchTable({ data }) {
     return rows
   }, [data, sortField, sortDir, checkedTickers, comparing])
 
+  // Compute best value per ranked column when comparing
+  const bestValues = useMemo(() => {
+    if (!comparing || visibleData.length < 2) return {}
+    const bests = {}
+    for (const col of COLUMNS) {
+      if (!col.best) continue
+      const values = visibleData.map(r => r[col.key]).filter(v => v != null)
+      if (values.length === 0) continue
+      bests[col.key] = col.best === 'high' ? Math.max(...values) : Math.min(...values)
+    }
+    return bests
+  }, [comparing, visibleData])
+
   if (!data.length) {
     return <p className="text-gray-500 text-center py-12">No research data loaded. Import a Morningstar XLSX file to get started.</p>
   }
@@ -179,18 +193,25 @@ function EtfResearchTable({ data }) {
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                   </td>
-                  {COLUMNS.map(col => (
-                    <td
-                      key={col.key}
-                      className={`px-2 py-1.5 whitespace-nowrap ${
-                        col.type === 'text' ? 'text-left' : 'text-right'
-                      } ${col.sticky ? 'sticky left-8 bg-white z-10 font-semibold' : ''} ${
-                        col.key === 'name' ? 'text-gray-600 truncate max-w-[240px]' : cellColor(row[col.key], col)
-                      } ${col.type === 'stars' ? 'text-yellow-500 tracking-tight' : ''}`}
-                    >
-                      {formatCell(row[col.key], col)}
-                    </td>
-                  ))}
+                  {COLUMNS.map(col => {
+                    const isBest = comparing && col.best && row[col.key] != null && bestValues[col.key] === row[col.key]
+                    return (
+                      <td
+                        key={col.key}
+                        className={`px-2 py-1.5 whitespace-nowrap ${
+                          col.type === 'text' ? 'text-left' : 'text-right'
+                        } ${col.sticky ? 'sticky left-8 z-10 font-semibold' : ''} ${
+                          col.sticky ? (isBest ? 'bg-green-50' : 'bg-white') : ''
+                        } ${
+                          col.key === 'name' ? 'text-gray-600 truncate max-w-[240px]' : cellColor(row[col.key], col)
+                        } ${col.type === 'stars' ? 'text-yellow-500 tracking-tight' : ''} ${
+                          isBest ? 'bg-green-50 font-semibold' : ''
+                        }`}
+                      >
+                        {formatCell(row[col.key], col)}
+                      </td>
+                    )
+                  })}
                 </tr>
               )
             })}
