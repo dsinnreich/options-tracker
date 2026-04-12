@@ -139,7 +139,7 @@ function EtfResearchTable({ data }) {
         </div>
       )}
 
-      <div className="overflow-x-auto border border-gray-200 rounded-lg shadow-sm">
+      <div className="overflow-x-auto border border-gray-200 rounded-lg shadow-sm pb-3">
         <table className="min-w-full text-xs">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
