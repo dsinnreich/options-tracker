@@ -11,6 +11,7 @@ import backupRouter from './routes/backup.js'
 import authRouter from './routes/auth.js'
 import adminRouter from './routes/admin.js'
 import portfolioRouter from './routes/portfolio.js'
+import researchRouter from './routes/research.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -48,7 +49,7 @@ app.use(cors({
   credentials: true
 }))
 
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
 app.use(express.text())
 
 // Request logging in production
@@ -87,6 +88,7 @@ app.use('/api/prices', requireAuth, pricesRouter)
 app.use('/api/backup', requireAuth, backupRouter)
 app.use('/api/admin', requireAuth, adminRouter)
 app.use('/api/portfolio', requireAuth, portfolioRouter)
+app.use('/api/research', requireAuth, researchRouter)
 
 console.log('🔒 Session-based authentication enabled')
 

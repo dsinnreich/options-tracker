@@ -274,6 +274,53 @@ const migrations = [
       }
       console.log('✅ Migrated to version 6: Added close_fees and close_date to positions')
     }
+  },
+  {
+    version: 7,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS etf_research_imports (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          import_date TEXT NOT NULL,
+          filename TEXT,
+          row_count INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+      `)
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS etf_research_data (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          import_id INTEGER NOT NULL,
+          ticker TEXT NOT NULL,
+          name TEXT,
+          std_dev_3y REAL,
+          sharpe_ratio_3y REAL,
+          alpha_3y REAL,
+          morningstar_rating REAL,
+          beta_3y REAL,
+          total_return_1m REAL,
+          total_return_3m REAL,
+          total_return_6m REAL,
+          total_return_ytd REAL,
+          total_return_1y REAL,
+          total_return_3y REAL,
+          total_return_5y REAL,
+          downside_capture_3y REAL,
+          sec_yield REAL,
+          tax_cost_3y REAL,
+          expense_ratio REAL,
+          category TEXT,
+          style_box TEXT,
+          medalist_rating TEXT,
+          FOREIGN KEY(import_id) REFERENCES etf_research_imports(id) ON DELETE CASCADE
+        )
+      `)
+
+      console.log('✅ Migrated to version 7: Added ETF research tables')
+    }
   }
 ]
 

@@ -10,6 +10,7 @@ import ResetPassword from './components/ResetPassword'
 import Admin from './components/Admin'
 import ProtectedRoute from './components/ProtectedRoute'
 import PortfolioDashboard from './components/PortfolioDashboard'
+import ResearchDashboard from './components/ResearchDashboard'
 
 function App() {
   return (
@@ -32,6 +33,9 @@ function App() {
 
         {/* Portfolio section */}
         <Route path="portfolio" element={<PortfolioDashboard />} />
+
+        {/* Research section */}
+        <Route path="research" element={<ResearchDashboard />} />
       </Route>
     </Routes>
   )

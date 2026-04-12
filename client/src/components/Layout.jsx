@@ -12,7 +12,8 @@ function Layout() {
   }
 
   const inPortfolio = location.pathname.startsWith('/portfolio')
-  const inOptions = !inPortfolio
+  const inResearch = location.pathname.startsWith('/research')
+  const inOptions = !inPortfolio && !inResearch
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -45,6 +46,16 @@ function Layout() {
                   }`}
                 >
                   Options
+                </Link>
+                <Link
+                  to="/research"
+                  className={`px-4 py-2 rounded-md text-sm font-semibold border transition-colors ${
+                    inResearch
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'text-gray-600 border-transparent hover:bg-gray-100'
+                  }`}
+                >
+                  Research
                 </Link>
               </div>
             </div>
