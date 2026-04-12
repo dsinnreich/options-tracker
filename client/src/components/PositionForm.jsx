@@ -181,19 +181,32 @@ function PositionForm() {
 
   // Calculate preview
   useEffect(() => {
-    const { premium_per_contract, quantity, fees, stock_price, expiration_date, open_date } = watchedFields
+    const { premium_per_contract, quantity, fees, stock_price, expiration_date, open_date, status, close_price, close_fees } = watchedFields
     if (premium_per_contract && quantity && stock_price && expiration_date) {
-      const net = netPremium(parseFloat(premium_per_contract), parseInt(quantity), parseFloat(fees) || 0)
-      const capital = capitalAtRisk(parseFloat(stock_price), parseInt(quantity))
+      const qty = parseInt(quantity)
+      const openFees = parseFloat(fees) || 0
+      const net = netPremium(parseFloat(premium_per_contract), qty, openFees)
+      const capital = capitalAtRisk(parseFloat(stock_price), qty)
       const annualized = annualizedYield(
         parseFloat(premium_per_contract),
-        parseInt(quantity),
-        parseFloat(fees) || 0,
+        qty,
+        openFees,
         parseFloat(stock_price),
         expiration_date,
         open_date
       )
-      setPreview({ net, capital, annualized })
+      const p = { net, capital, annualized }
+
+      if (status === 'Closed' && close_price !== '' && close_price != null) {
+        const cp = parseFloat(close_price)
+        const cf = parseFloat(close_fees) || 0
+        const closeCost = cp * qty * 100
+        const totalFees = openFees + cf
+        const realizedPnl = net - closeCost - cf
+        Object.assign(p, { closeCost, totalFees, realizedPnl })
+      }
+
+      setPreview(p)
     } else {
       setPreview(null)
     }
@@ -481,6 +494,24 @@ function PositionForm() {
                 <span className="ml-2 font-medium">{preview.annualized.toFixed(2)}%</span>
               </div>
             </div>
+            {preview.realizedPnl != null && (
+              <div className="grid grid-cols-3 gap-4 text-sm mt-3 pt-3 border-t border-blue-200">
+                <div>
+                  <span className="text-blue-700">Close Cost:</span>
+                  <span className="ml-2 font-medium">{formatCurrency(preview.closeCost)}</span>
+                </div>
+                <div>
+                  <span className="text-blue-700">Total Fees:</span>
+                  <span className="ml-2 font-medium">{formatCurrency(preview.totalFees)}</span>
+                </div>
+                <div>
+                  <span className="text-blue-700">Realized P&L:</span>
+                  <span className={`ml-2 font-medium ${preview.realizedPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                    {formatCurrency(preview.realizedPnl)}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
