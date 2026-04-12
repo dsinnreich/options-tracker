@@ -13,7 +13,7 @@ const diffClass = (val) =>
   val < -0.5 ? 'text-red-600' : val > 0.5 ? 'text-green-700' : 'text-gray-600'
 
 // --- Pivot calculation ---
-function buildPivotData(positions, assetClassMap, targets) {
+function buildPivotData(positions, assetClassMap, targets, livePrices) {
   const mapBySymbol = {}
   for (const m of assetClassMap) {
     mapBySymbol[m.symbol.toUpperCase()] = m
@@ -26,6 +26,8 @@ function buildPivotData(positions, assetClassMap, targets) {
 
   const groups = {}
   let grandTotal = 0
+  let liveGrandTotal = 0
+  const hasLive = livePrices && Object.keys(livePrices).length > 0
 
   // Symbols/labels that default to Liquidity/Cash if not in the asset class map
   const LIQUIDITY_SYMBOLS = new Set(['FDRXX', 'SPAXX', 'CORE', 'FDIC', 'PENDING ACTIVITY'])
@@ -37,7 +39,14 @@ function buildPivotData(positions, assetClassMap, targets) {
     const val = pos.current_value || 0
     grandTotal += val
 
+    // Compute live value: if we have a live price for this symbol, use quantity * price * 1 (no multiplier for stocks)
     const lookupSym = sym.replace(/\*+$/, '').toUpperCase()
+    let liveVal = val // default to imported value
+    if (hasLive && livePrices[lookupSym] != null && pos.quantity != null) {
+      liveVal = pos.quantity * livePrices[lookupSym]
+    }
+    liveGrandTotal += liveVal
+
     const mapping = mapBySymbol[lookupSym]
     const isLiquidityDefault = !mapping && LIQUIDITY_SYMBOLS.has(lookupSym)
     const assetClass = mapping ? mapping.asset_class : (isLiquidityDefault ? 'Liquidity' : 'Unmapped')
@@ -48,9 +57,10 @@ function buildPivotData(positions, assetClassMap, targets) {
     if (!groups[assetClass]) groups[assetClass] = {}
     if (!groups[assetClass][style]) groups[assetClass][style] = {}
     if (!groups[assetClass][style][sym]) {
-      groups[assetClass][style][sym] = { description, value: 0 }
+      groups[assetClass][style][sym] = { description, value: 0, liveValue: 0 }
     }
     groups[assetClass][style][sym].value += val
+    groups[assetClass][style][sym].liveValue += liveVal
   }
 
   const sortedAC = Object.keys(groups).sort((a, b) => {
@@ -63,24 +73,29 @@ function buildPivotData(positions, assetClassMap, targets) {
   for (const assetClass of sortedAC) {
     const styles = groups[assetClass]
     let acValue = 0
+    let acLiveValue = 0
     const styleRows = []
 
     for (const [style, holdings] of Object.entries(styles)) {
       let styleValue = 0
+      let styleLiveValue = 0
       const holdingRows = []
 
       const sortedHoldings = Object.entries(holdings).sort(([, a], [, b]) => b.value - a.value)
       for (const [symbol, data] of sortedHoldings) {
         styleValue += data.value
+        styleLiveValue += data.liveValue
         holdingRows.push({
           symbol,
           description: data.description,
           current_value: data.value,
-          current_pct: grandTotal > 0 ? (data.value / grandTotal) * 100 : 0
+          current_pct: grandTotal > 0 ? (data.value / grandTotal) * 100 : 0,
+          live_value: data.liveValue
         })
       }
 
       acValue += styleValue
+      acLiveValue += styleLiveValue
       const targetPct = targetMap[`${assetClass}|${style}`] || 0
       const targetDollar = (targetPct / 100) * grandTotal
 
@@ -92,6 +107,7 @@ function buildPivotData(positions, assetClassMap, targets) {
         target_dollar: targetDollar,
         diff_dollar: styleValue - targetDollar,
         diff_pct: grandTotal > 0 ? ((styleValue - targetDollar) / grandTotal) * 100 : 0,
+        live_value: styleLiveValue,
         children: holdingRows
       })
     }
@@ -113,11 +129,12 @@ function buildPivotData(positions, assetClassMap, targets) {
       target_dollar: acTargetDollar,
       diff_dollar: acValue - acTargetDollar,
       diff_pct: grandTotal > 0 ? ((acValue - acTargetDollar) / grandTotal) * 100 : 0,
+      live_value: acLiveValue,
       children: styleRows
     })
   }
 
-  return { grandTotal, assetClasses }
+  return { grandTotal, liveGrandTotal, hasLive, assetClasses }
 }
 
 // --- Column definitions ---
@@ -136,7 +153,7 @@ const COLS = [
 const MIN_COL_WIDTH = 50
 
 // --- Component ---
-export default function PortfolioPivotTable({ positions, assetClassMap, savedTargets, onSaveTargets }) {
+export default function PortfolioPivotTable({ positions, assetClassMap, savedTargets, onSaveTargets, livePrices }) {
   const [whatIfMode, setWhatIfMode] = useState(false)
   const [editTargets, setEditTargets] = useState({})
   const [saving, setSaving] = useState(false)
@@ -200,8 +217,8 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
   }, [whatIfMode, editTargets, savedTargets])
 
   const pivotData = useMemo(
-    () => buildPivotData(positions, assetClassMap, effectiveTargets),
-    [positions, assetClassMap, effectiveTargets]
+    () => buildPivotData(positions, assetClassMap, effectiveTargets, livePrices),
+    [positions, assetClassMap, effectiveTargets, livePrices]
   )
 
   const totalTargetPct = Object.values(editTargets).reduce((sum, v) => sum + (parseFloat(v) || 0), 0)
@@ -284,6 +301,12 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
         <div className="text-sm text-gray-500">
           Total Portfolio Value:{' '}
           <span className="font-semibold text-gray-800">{fmt$(pivotData.grandTotal)}</span>
+          {pivotData.hasLive && (
+            <>
+              <span className="mx-2 text-gray-300">|</span>
+              <span className="text-green-700">Live: <span className="font-semibold">{fmt$(pivotData.liveGrandTotal)}</span></span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {whatIfMode ? (
@@ -323,6 +346,11 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
                   <ResizeHandle colKey={col.key} />
                 </th>
               ))}
+              {pivotData.hasLive && (
+                <th style={{ width: 120 }} className={`${px} py-1.5 font-semibold text-green-600 uppercase tracking-wide whitespace-nowrap text-right`}>
+                  Live Value
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -347,6 +375,9 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
                     <td style={w('target_dollar')} className={`${px} py-0.5`}></td>
                     <td style={w('diff_dollar')}   className={`${px} py-0.5`}></td>
                     <td style={w('diff_pct')}      className={`${px} py-0.5`}></td>
+                    {pivotData.hasLive && (
+                      <td className={`${px} py-0.5 text-right text-green-700`}>{fmt$(hRow.live_value)}</td>
+                    )}
                   </tr>
                 )
               }
@@ -381,6 +412,9 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
                     <td style={w('target_dollar')} className={`${px} py-1 text-right font-semibold text-gray-700`}>{fmt$(sRow.target_dollar)}</td>
                     <td style={w('diff_dollar')}   className={`${px} py-1 text-right font-semibold ${diffClass(sRow.diff_dollar)}`}>{fmt$(sRow.diff_dollar)}</td>
                     <td style={w('diff_pct')}      className={`${px} py-1 text-right font-semibold ${diffClass(sRow.diff_pct)}`}>{fmtPct(sRow.diff_pct)}</td>
+                    {pivotData.hasLive && (
+                      <td className={`${px} py-1 text-right font-semibold text-green-700`}>{fmt$(sRow.live_value)}</td>
+                    )}
                   </tr>
                 )
               }
@@ -403,6 +437,9 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
                     <td style={w('target_dollar')} className={`${px} py-1.5 text-right font-bold text-gray-800`}>{fmt$(acRow.target_dollar)}</td>
                     <td style={w('diff_dollar')}   className={`${px} py-1.5 text-right font-bold ${diffClass(acRow.diff_dollar)}`}>{fmt$(acRow.diff_dollar)}</td>
                     <td style={w('diff_pct')}      className={`${px} py-1.5 text-right font-bold ${diffClass(acRow.diff_pct)}`}>{fmtPct(acRow.diff_pct)}</td>
+                    {pivotData.hasLive && (
+                      <td className={`${px} py-1.5 text-right font-bold text-green-700`}>{fmt$(acRow.live_value)}</td>
+                    )}
                   </tr>
                 )
               }
@@ -419,6 +456,9 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
                   <td style={w('target_dollar')} className={`${px} py-2 text-right font-bold text-gray-800`}>{fmt$(pivotData.grandTotal)}</td>
                   <td style={w('diff_dollar')}   className={`${px} py-2 text-right font-bold text-gray-500`}>—</td>
                   <td style={w('diff_pct')}      className={`${px} py-2 text-right font-bold text-gray-500`}>—</td>
+                  {pivotData.hasLive && (
+                    <td className={`${px} py-2 text-right font-bold text-green-700`}>{fmt$(pivotData.liveGrandTotal)}</td>
+                  )}
                 </tr>
               )
             })}

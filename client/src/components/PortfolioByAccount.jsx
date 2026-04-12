@@ -1,4 +1,6 @@
-function PortfolioByAccount({ positions, lastTransactions = {} }) {
+const NON_PRICEABLE = new Set(['FDRXX', 'SPAXX', 'CORE', 'FDIC', 'PENDING ACTIVITY'])
+
+function PortfolioByAccount({ positions, lastTransactions = {}, livePrices }) {
   if (!positions || positions.length === 0) {
     return (
       <div className="text-center py-20 text-gray-400">
@@ -15,8 +17,19 @@ function PortfolioByAccount({ positions, lastTransactions = {} }) {
     accounts[name].push(pos)
   }
 
+  const hasLive = livePrices && Object.keys(livePrices).length > 0
+
+  const liveValueFor = (pos) => {
+    if (!hasLive) return null
+    const sym = (pos.symbol || '').replace(/\*+$/, '').toUpperCase()
+    if (livePrices[sym] != null && pos.quantity != null) return pos.quantity * livePrices[sym]
+    if (NON_PRICEABLE.has(sym) && pos.last_price != null) return pos.quantity * pos.last_price
+    return pos.current_value || 0
+  }
+
   // Compute account total and grand total
   const grandTotal = positions.reduce((sum, p) => sum + (p.current_value || 0), 0)
+  const liveGrandTotal = hasLive ? positions.reduce((sum, p) => sum + liveValueFor(p), 0) : 0
 
   const fmt = (n) =>
     n == null ? '—' : '$' + Math.round(n).toLocaleString()
@@ -30,6 +43,7 @@ function PortfolioByAccount({ positions, lastTransactions = {} }) {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([accountName, rows]) => {
           const accountTotal = rows.reduce((sum, p) => sum + (p.current_value || 0), 0)
+          const liveAccountTotal = hasLive ? rows.reduce((sum, p) => sum + liveValueFor(p), 0) : 0
           const accountPct = grandTotal > 0 ? (accountTotal / grandTotal) * 100 : 0
 
           return (
@@ -54,6 +68,7 @@ function PortfolioByAccount({ positions, lastTransactions = {} }) {
                     <th className="text-left px-4 py-2 font-medium">Description</th>
                     <th className="text-right px-4 py-2 font-medium">Qty</th>
                     <th className="text-right px-4 py-2 font-medium">Current Value</th>
+                    {hasLive && <th className="text-right px-4 py-2 font-medium text-green-600">Live Value</th>}
                     <th className="text-right px-4 py-2 font-medium">% of Account</th>
                     <th className="text-right px-4 py-2 font-medium">Last Buy Date</th>
                     <th className="text-right px-4 py-2 font-medium">Last Sale Date</th>
@@ -78,6 +93,7 @@ function PortfolioByAccount({ positions, lastTransactions = {} }) {
                           <td className="px-4 py-2 text-gray-500 max-w-xs truncate">{pos.description}</td>
                           <td className="px-4 py-2 text-right text-gray-700">{pos.quantity}</td>
                           <td className="px-4 py-2 text-right text-gray-800">{fmt(pos.current_value)}</td>
+                          {hasLive && <td className="px-4 py-2 text-right text-green-700">{fmt(liveValueFor(pos))}</td>}
                           <td className="px-4 py-2 text-right text-gray-500">{fmtPct(pctOfAccount)}</td>
                           <td className="px-4 py-2 text-right text-gray-500">{symTxns.lastBuy  || '—'}</td>
                           <td className="px-4 py-2 text-right text-gray-500">{symTxns.lastSell || '—'}</td>
@@ -89,6 +105,7 @@ function PortfolioByAccount({ positions, lastTransactions = {} }) {
                   <tr className="bg-gray-50 font-semibold text-gray-700">
                     <td colSpan={3} className="px-4 py-2 text-right text-xs uppercase tracking-wide text-gray-500">Account Total</td>
                     <td className="px-4 py-2 text-right">{fmt(accountTotal)}</td>
+                    {hasLive && <td className="px-4 py-2 text-right text-green-700">{fmt(liveAccountTotal)}</td>}
                     <td className="px-4 py-2 text-right text-gray-500">{fmtPct(accountPct)}</td>
                   </tr>
                 </tfoot>
@@ -100,7 +117,10 @@ function PortfolioByAccount({ positions, lastTransactions = {} }) {
       {/* Grand total */}
       <div className="border border-gray-300 rounded-lg bg-gray-50 px-4 py-3 flex justify-between items-center font-semibold text-gray-800">
         <span>Grand Total — {Object.keys(accounts).length} account{Object.keys(accounts).length !== 1 ? 's' : ''}</span>
-        <span>{fmt(grandTotal)}</span>
+        <div className="flex items-center gap-4">
+          <span>{fmt(grandTotal)}</span>
+          {hasLive && <span className="text-green-700">Live: {fmt(liveGrandTotal)}</span>}
+        </div>
       </div>
     </div>
   )

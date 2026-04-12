@@ -54,6 +54,11 @@ export default function PortfolioDashboard() {
   const [importResult, setImportResult] = useState(null)
   const [importError, setImportError] = useState(null)
 
+  // Live prices
+  const [livePrices, setLivePrices] = useState(null) // { symbol: price } or null when hidden
+  const [livePricesLoading, setLivePricesLoading] = useState(false)
+  const [livePricesError, setLivePricesError] = useState(null)
+
 
   // Select first portfolio on initial load
   useEffect(() => {
@@ -263,6 +268,61 @@ export default function PortfolioDashboard() {
     const fresh = await getTargets(activePortfolioId)
     setTargets(fresh)
   }
+
+  // --- Live prices ---
+  const NON_PRICEABLE = new Set(['FDRXX', 'SPAXX', 'CORE', 'FDIC', 'PENDING ACTIVITY'])
+
+  const fetchLivePrices = async () => {
+    if (positions.length === 0) return
+    setLivePricesLoading(true)
+    setLivePricesError(null)
+    const prices = {}
+    const symbols = [...new Set(
+      positions
+        .map(p => (p.symbol || '').replace(/\*+$/, '').toUpperCase())
+        .filter(s => s && !NON_PRICEABLE.has(s))
+    )]
+
+    let failed = 0
+    for (const sym of symbols) {
+      try {
+        const res = await fetch(`/api/prices/stock/${sym}`, { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.price != null) prices[sym] = data.price
+        } else {
+          failed++
+        }
+      } catch {
+        failed++
+      }
+    }
+
+    // For non-priceable symbols, compute value from imported data (quantity * last_price or current_value)
+    for (const pos of positions) {
+      const sym = (pos.symbol || '').replace(/\*+$/, '').toUpperCase()
+      if (NON_PRICEABLE.has(sym) && !prices[sym] && pos.last_price != null) {
+        prices[sym] = pos.last_price
+      }
+    }
+
+    setLivePrices(prices)
+    setLivePricesLoading(false)
+    if (failed > 0) {
+      setLivePricesError(`Could not fetch prices for ${failed} symbol${failed !== 1 ? 's' : ''}`)
+    }
+  }
+
+  const hideLivePrices = () => {
+    setLivePrices(null)
+    setLivePricesError(null)
+  }
+
+  // Clear live prices when switching portfolios or imports
+  useEffect(() => {
+    setLivePrices(null)
+    setLivePricesError(null)
+  }, [activePortfolioId, selectedImportId])
 
   // --- Asset class map ---
   const refreshMap = async () => {
@@ -475,6 +535,25 @@ export default function PortfolioDashboard() {
                       <option key={imp.id} value={imp.id}>{imp.import_date}</option>
                     ))}
                   </select>
+                  <div className="ml-auto flex items-center gap-2">
+                    {livePricesError && <span className="text-xs text-amber-600">{livePricesError}</span>}
+                    {livePrices ? (
+                      <button
+                        onClick={hideLivePrices}
+                        className="px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50"
+                      >
+                        Hide Live Values
+                      </button>
+                    ) : (
+                      <button
+                        onClick={fetchLivePrices}
+                        disabled={livePricesLoading || positions.length === 0}
+                        className="px-3 py-1.5 text-sm border border-green-300 rounded-md text-green-700 hover:bg-green-50 disabled:opacity-50"
+                      >
+                        {livePricesLoading ? 'Fetching...' : 'Live Values'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -496,6 +575,7 @@ export default function PortfolioDashboard() {
                   assetClassMap={assetClassMap}
                   savedTargets={targets}
                   onSaveTargets={handleSaveTargets}
+                  livePrices={livePrices}
                 />
               )}
 
@@ -535,7 +615,7 @@ export default function PortfolioDashboard() {
               {dataLoading ? (
                 <div className="flex items-center justify-center h-48 text-gray-400">Loading...</div>
               ) : (
-                <PortfolioByAccount positions={positions} lastTransactions={lastTransactions} />
+                <PortfolioByAccount positions={positions} lastTransactions={lastTransactions} livePrices={livePrices} />
               )}
             </div>
           )}
