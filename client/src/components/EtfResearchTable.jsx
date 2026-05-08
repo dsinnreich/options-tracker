@@ -52,7 +52,7 @@ function cellColor(value, col) {
   return 'text-gray-900'
 }
 
-function EtfResearchTable({ data }) {
+function EtfResearchTable({ data, onOptimize }) {
   const [sortField, setSortField] = useState('ticker')
   const [sortDir, setSortDir] = useState('asc')
   const [checkedTickers, setCheckedTickers] = useState(new Set())
@@ -143,6 +143,17 @@ function EtfResearchTable({ data }) {
             <span className="text-sm text-blue-700 font-medium">
               Comparing {checkedTickers.size} ETF{checkedTickers.size !== 1 ? 's' : ''}
             </span>
+          )}
+          {onOptimize && checkedTickers.size >= 2 && checkedTickers.size <= 10 && (
+            <button
+              onClick={() => onOptimize(data.filter(r => checkedTickers.has(r.ticker)))}
+              className="px-3 py-1 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 font-medium"
+            >
+              Optimize Selected
+            </button>
+          )}
+          {onOptimize && checkedTickers.size > 10 && (
+            <span className="text-sm text-amber-600">Select at most 10 ETFs to optimize</span>
           )}
           <button
             onClick={clearSelection}

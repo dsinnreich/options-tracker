@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useResearch } from '../hooks/useResearch'
 import EtfResearchTable from './EtfResearchTable'
+import OptimizerPanel from './OptimizerPanel'
 
 function ResearchDashboard() {
   const {
@@ -25,6 +26,7 @@ function ResearchDashboard() {
   const [newName, setNewName] = useState('')
   const [renamingId, setRenamingId] = useState(null)
   const [renameValue, setRenameValue] = useState('')
+  const [optimizerEtfs, setOptimizerEtfs] = useState(null)
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0]
@@ -184,10 +186,12 @@ function ResearchDashboard() {
         </div>
       )}
 
-      {!activeWatchlist && watchlists.length === 0 ? (
+      {optimizerEtfs ? (
+        <OptimizerPanel etfs={optimizerEtfs} onBack={() => setOptimizerEtfs(null)} />
+      ) : !activeWatchlist && watchlists.length === 0 ? (
         <p className="text-gray-500 text-center py-12">Create a watchlist to get started.</p>
       ) : (
-        <EtfResearchTable data={data} />
+        <EtfResearchTable data={data} onOptimize={setOptimizerEtfs} />
       )}
     </div>
   )
