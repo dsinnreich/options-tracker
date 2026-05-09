@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { computeEfficientFrontier } from '../utils/efficientFrontier'
+import { computeEfficientFrontier, buildProxyCorrMatrix } from '../utils/efficientFrontier'
 
 const RETURN_OPTIONS = [
   { value: 'total_return_1y', label: '1Y' },
@@ -251,6 +251,113 @@ function PortfolioTable({ frontier, etfs, selectedIdx, onSelect, returnLabel }) 
   )
 }
 
+// --- Correlation heatmap ---
+
+function corrColor(v) {
+  const t = Math.max(-1, Math.min(1, v))
+  if (t >= 0) {
+    // gray-50 → red-600: rgb(249,250,251) → rgb(220,38,38)
+    return `rgb(${Math.round(249 - 29 * t)},${Math.round(250 - 212 * t)},${Math.round(251 - 213 * t)})`
+  } else {
+    // gray-50 → blue-600: rgb(249,250,251) → rgb(37,99,235)
+    const s = -t
+    return `rgb(${Math.round(249 - 212 * s)},${Math.round(250 - 151 * s)},${Math.round(251 - 16 * s)})`
+  }
+}
+
+function CorrelationHeatmap({ symbols, matrix, corrInfo }) {
+  const n = symbols.length
+  const CELL = n <= 5 ? 72 : n <= 8 ? 60 : 50
+  const LABEL_W = 54
+  const LABEL_H = 60
+  const W = LABEL_W + n * CELL
+  const H = LABEL_H + n * CELL
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-baseline space-x-2 mb-3">
+        <h3 className="text-sm font-semibold text-gray-700">Correlation Matrix</h3>
+        {corrInfo && !corrInfo.usingProxy
+          ? <span className="text-xs text-gray-400">{corrInfo.tradingDays} trading days · {corrInfo.from} – {corrInfo.to} · MarketData.app</span>
+          : <span className="text-xs text-amber-500">estimated via S&P 500 downside-capture proxy</span>
+        }
+      </div>
+
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: Math.min(W, 700), height: 'auto', display: 'block' }}>
+          {/* Column labels — rotated 45° */}
+          {symbols.map((s, j) => (
+            <text
+              key={j}
+              x={LABEL_W + j * CELL + CELL / 2}
+              y={LABEL_H - 8}
+              textAnchor="start"
+              fontSize="10"
+              fill="#374151"
+              fontWeight="500"
+              transform={`rotate(-45,${LABEL_W + j * CELL + CELL / 2},${LABEL_H - 8})`}
+            >
+              {s}
+            </text>
+          ))}
+
+          {/* Row labels */}
+          {symbols.map((s, i) => (
+            <text
+              key={i}
+              x={LABEL_W - 6}
+              y={LABEL_H + i * CELL + CELL / 2 + 4}
+              textAnchor="end"
+              fontSize="10"
+              fill="#374151"
+              fontWeight="500"
+            >
+              {s}
+            </text>
+          ))}
+
+          {/* Cells */}
+          {matrix.map((row, i) =>
+            row.map((val, j) => {
+              const x = LABEL_W + j * CELL
+              const y = LABEL_H + i * CELL
+              const diag = i === j
+              const bg = diag ? '#f3f4f6' : corrColor(val)
+              const dark = Math.abs(val) < 0.55 || diag
+              const textFill = dark ? '#1f2937' : '#ffffff'
+              return (
+                <g key={`${i}-${j}`}>
+                  <rect x={x} y={y} width={CELL} height={CELL} fill={bg} stroke="#e5e7eb" strokeWidth="0.5" />
+                  <text
+                    x={x + CELL / 2}
+                    y={y + CELL / 2 + 4}
+                    textAnchor="middle"
+                    fontSize={diag ? '9' : '10'}
+                    fill={textFill}
+                    fontWeight={diag ? '600' : '400'}
+                  >
+                    {diag ? symbols[i] : val.toFixed(2)}
+                  </text>
+                </g>
+              )
+            })
+          )}
+        </svg>
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center space-x-2 mt-2">
+        <span className="text-xs text-gray-400">−1.0</span>
+        <div style={{
+          width: 120, height: 10, borderRadius: 3,
+          background: 'linear-gradient(to right, rgb(37,99,235), rgb(249,250,251), rgb(220,38,38))'
+        }} />
+        <span className="text-xs text-gray-400">+1.0</span>
+      </div>
+    </div>
+  )
+}
+
 // --- Main component ---
 
 export default function OptimizerPanel({ etfs, onBack }) {
@@ -259,21 +366,65 @@ export default function OptimizerPanel({ etfs, onBack }) {
   const [results, setResults] = useState(null)
   const [selectedIdx, setSelectedIdx] = useState(null)
   const [computing, setComputing] = useState(false)
+  const [corrInfo, setCorrInfo] = useState(null) // { tradingDays, from, to, skipped?, usingProxy }
+  const [savedCorrMatrix, setSavedCorrMatrix] = useState(null) // matrix used for last run, for display
+  const [savedCorrSymbols, setSavedCorrSymbols] = useState(null)
 
   const returnLabel = RETURN_OPTIONS.find(o => o.value === returnField)?.label ?? '3Y'
 
   const validEtfs = etfs.filter(e => e[returnField] != null && e.std_dev_3y != null)
   const excludedEtfs = etfs.filter(e => e[returnField] == null || e.std_dev_3y == null)
 
-  const handleRun = () => {
+  const handleRun = async () => {
     if (validEtfs.length < 2) return
     setComputing(true)
     setResults(null)
     setSelectedIdx(null)
+    setCorrInfo(null)
+    setSavedCorrMatrix(null)
+    setSavedCorrSymbols(null)
+
+    // Fetch real pairwise correlations from MarketData.app
+    let corrMatrix = null
+    let newCorrInfo = { usingProxy: true }
+    try {
+      const resp = await fetch('/api/prices/correlations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ symbols: validEtfs.map(e => e.ticker) })
+      })
+      if (resp.ok) {
+        const data = await resp.json()
+        // Build a matrix ordered to match validEtfs (some tickers may have been skipped)
+        const symIndex = Object.fromEntries(data.symbols.map((s, i) => [s, i]))
+        corrMatrix = validEtfs.map(ei =>
+          validEtfs.map(ej => {
+            const ii = symIndex[ei.ticker], ji = symIndex[ej.ticker]
+            if (ii === undefined || ji === undefined) return ei.ticker === ej.ticker ? 1 : null
+            return data.matrix[ii][ji]
+          })
+        )
+        // If any entry is null (ticker missing from response), fall back to proxy
+        const hasMissing = corrMatrix.some(row => row.some(v => v === null))
+        if (hasMissing) corrMatrix = null
+        else newCorrInfo = { usingProxy: false, tradingDays: data.tradingDays, from: data.from, to: data.to, skipped: data.skipped }
+      }
+    } catch {
+      // Network error — silently fall back to proxy
+    }
+
+    setCorrInfo(newCorrInfo)
+
+    // Store whichever matrix will be used (real or proxy) for the heatmap display
+    const displayMatrix = corrMatrix ?? buildProxyCorrMatrix(validEtfs)
+    setSavedCorrMatrix(displayMatrix)
+    setSavedCorrSymbols(validEtfs.map(e => e.ticker))
+
     // Allow the UI to repaint before the CPU-heavy computation
     setTimeout(() => {
       try {
-        const r = computeEfficientFrontier(validEtfs, returnField, riskFreeRate / 100)
+        const r = computeEfficientFrontier(validEtfs, returnField, riskFreeRate / 100, corrMatrix)
         setResults(r)
       } finally {
         setComputing(false)
@@ -285,6 +436,9 @@ export default function OptimizerPanel({ etfs, onBack }) {
     setReturnField(value)
     setResults(null)
     setSelectedIdx(null)
+    setCorrInfo(null)
+    setSavedCorrMatrix(null)
+    setSavedCorrSymbols(null)
   }
 
   const selectedPortfolio = results && selectedIdx !== null ? results.frontier[selectedIdx] : null
@@ -359,7 +513,7 @@ export default function OptimizerPanel({ etfs, onBack }) {
           disabled={computing || validEtfs.length < 2}
           className="px-5 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
         >
-          {computing ? 'Computing…' : 'Run Optimizer'}
+          {computing ? (corrInfo === null ? 'Fetching correlations…' : 'Computing…') : 'Run Optimizer'}
         </button>
 
         <span className="text-xs text-gray-400">5,000 Monte Carlo simulations</span>
@@ -401,9 +555,21 @@ export default function OptimizerPanel({ etfs, onBack }) {
             returnLabel={returnLabel}
           />
 
+          {/* Correlation heatmap */}
+          {savedCorrMatrix && savedCorrSymbols && (
+            <CorrelationHeatmap
+              symbols={savedCorrSymbols}
+              matrix={savedCorrMatrix}
+              corrInfo={corrInfo}
+            />
+          )}
+
           <p className="mt-3 text-xs text-gray-400">
-            Pairwise correlations estimated via downside capture ratios (single-factor S&P 500 proxy).
-            Returns and standard deviations from Morningstar. This is illustrative, not financial advice.
+            {corrInfo && !corrInfo.usingProxy
+              ? <>Pairwise correlations from {corrInfo.tradingDays} trading days of daily price history ({corrInfo.from} – {corrInfo.to}) via MarketData.app.{corrInfo.skipped?.length > 0 && ` Proxy used for: ${corrInfo.skipped.join(', ')}.`}</>
+              : <>Pairwise correlations estimated via downside capture ratios (single-factor S&P 500 proxy).</>
+            }
+            {' '}Returns and standard deviations from Morningstar. This is illustrative, not financial advice.
             {returnLabel !== '3Y' && (
               <span className="text-amber-500"> ⚠ Sharpe ratio uses {returnLabel} return with 3Y std dev — time periods don't match. Switch to 3Y return for a more meaningful Sharpe.</span>
             )}

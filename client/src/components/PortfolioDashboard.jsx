@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { usePortfolio } from '../hooks/usePortfolio'
+import { useResearch } from '../hooks/useResearch'
 import PortfolioPivotTable from './PortfolioPivotTable'
 import PortfolioByAccount from './PortfolioByAccount'
 import AssetClassMapEditor from './AssetClassMapEditor'
+import PortfolioResearchView from './PortfolioResearchView'
 
 export default function PortfolioDashboard() {
   const {
@@ -16,6 +18,8 @@ export default function PortfolioDashboard() {
     getNotes, saveNotes,
     importHistory, getHistoryAccounts, getLastTransactions
   } = usePortfolio()
+
+  const { data: researchData, activeWatchlist: researchWatchlist } = useResearch()
 
   const [activePortfolioId, setActivePortfolioId] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
@@ -48,11 +52,15 @@ export default function PortfolioDashboard() {
   const [historyResult, setHistoryResult] = useState(null)
   const [historyError, setHistoryError] = useState(null)
 
-  // CSV import
+  // Holdings import
+  const [importMode, setImportMode] = useState('file') // 'file' | 'paste'
   const [importFile, setImportFile] = useState(null)
+  const [pasteContent, setPasteContent] = useState('')
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [importError, setImportError] = useState(null)
+  const [importFormat, setImportFormat] = useState(null) // null | 'fidelity' | '529'
+  const [accountName529, setAccountName529] = useState('')
 
   // Live prices
   const [livePrices, setLivePrices] = useState(null) // { symbol: price } or null when hidden
@@ -209,18 +217,55 @@ export default function PortfolioDashboard() {
     setHistoryFile(null)
   }
 
-  // --- CSV Import ---
+  // --- Holdings Import ---
+  const detect529Format = (content) => {
+    const firstLine = content.split(/\r?\n/)[0] || ''
+    const cols = firstLine.split('\t').map(c => c.trim())
+    return cols.includes('Symbol') && cols.includes('Units')
+  }
+
+  const handleImportFileChange = async (e) => {
+    const file = e.target.files[0] || null
+    setImportFile(file)
+    setImportResult(null)
+    setImportError(null)
+    setImportFormat(null)
+    setAccountName529('')
+    if (file) {
+      const text = await file.text()
+      setImportFormat(detect529Format(text) ? '529' : 'fidelity')
+    }
+  }
+
+  const handlePasteChange = (text) => {
+    setPasteContent(text)
+    setImportResult(null)
+    setImportError(null)
+    setImportFormat(text.trim() ? (detect529Format(text) ? '529' : 'fidelity') : null)
+    setAccountName529('')
+  }
+
   const handleImport = async () => {
-    if (!importFile || !activePortfolioId) return
+    if (!activePortfolioId) return
+    const content = importMode === 'paste' ? pasteContent : await importFile?.text()
+    if (!content?.trim()) return
+    const filename = importMode === 'paste' ? 'pasted-holdings.txt' : importFile.name
+
     setImporting(true)
     setImportResult(null)
     setImportError(null)
     try {
-      const content = await importFile.text()
-      const result = await importCSV(activePortfolioId, importFile.name, content)
+      const result = await importCSV(
+        activePortfolioId,
+        filename,
+        content,
+        importFormat === '529' ? accountName529 : undefined
+      )
       setImportResult(result)
       setImportFile(null)
-      // Reset file input
+      setPasteContent('')
+      setImportFormat(null)
+      setAccountName529('')
       const el = document.getElementById('csv-upload')
       if (el) el.value = ''
       await loadPortfolioData(activePortfolioId)
@@ -465,6 +510,7 @@ export default function PortfolioDashboard() {
               {[
                 { id: 'overview', label: 'By Asset Class' },
                 { id: 'by-account', label: 'By Account' },
+                { id: 'analysis', label: 'Analysis' },
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -620,6 +666,36 @@ export default function PortfolioDashboard() {
             </div>
           )}
 
+          {/* ANALYSIS TAB */}
+          {activeTab === 'analysis' && (
+            <div>
+              {imports.length > 0 && (
+                <div className="flex items-center gap-3 mb-5">
+                  <label className="text-sm font-medium text-gray-600">Showing data for:</label>
+                  <select
+                    value={selectedImportId || ''}
+                    onChange={e => handleImportChange(Number(e.target.value))}
+                    className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  >
+                    {imports.map(imp => (
+                      <option key={imp.id} value={imp.id}>{imp.import_date}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {dataLoading ? (
+                <div className="flex items-center justify-center h-48 text-gray-400">Loading...</div>
+              ) : (
+                <PortfolioResearchView
+                  positions={positions}
+                  assetClassMap={assetClassMap}
+                  researchData={researchData}
+                  researchWatchlist={researchWatchlist}
+                />
+              )}
+            </div>
+          )}
+
           {/* ASSET CLASS MAP TAB */}
           {activeTab === 'map' && (
             <AssetClassMapEditor
@@ -722,35 +798,96 @@ export default function PortfolioDashboard() {
           {activeTab === 'import' && (
             <div className="max-w-2xl">
               <h2 className="text-base font-semibold text-gray-800 mb-1">Import Positions</h2>
-              <p className="text-sm text-gray-500 mb-5">
-                Upload a Fidelity CSV export. Each import is stored separately so you can view historical snapshots.
+              <p className="text-sm text-gray-500 mb-4">
+                Supports Fidelity CSV exports and 529 tab-separated holdings. Format is detected automatically.
+                Each import is stored separately so you can view historical snapshots.
                 Re-importing the same date replaces that day's data.
               </p>
 
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 mb-4 text-center hover:border-blue-400 transition-colors">
-                <input
-                  type="file"
-                  accept=".csv"
-                  id="csv-upload"
-                  className="hidden"
-                  onChange={e => {
-                    setImportFile(e.target.files[0] || null)
-                    setImportResult(null)
-                    setImportError(null)
-                  }}
-                />
-                <label htmlFor="csv-upload" className="cursor-pointer block">
-                  {importFile ? (
-                    <span className="text-blue-600 font-medium text-sm">{importFile.name}</span>
-                  ) : (
-                    <span className="text-gray-400 text-sm">Click to select a CSV file</span>
-                  )}
-                </label>
+              {/* Mode toggle */}
+              <div className="flex rounded-md border border-gray-300 overflow-hidden w-fit mb-5">
+                {[['file', 'Upload File'], ['paste', 'Paste Holdings']].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      setImportMode(mode)
+                      setImportFile(null)
+                      setPasteContent('')
+                      setImportFormat(null)
+                      setAccountName529('')
+                      setImportResult(null)
+                      setImportError(null)
+                    }}
+                    className={`px-4 py-1.5 text-sm font-medium transition-colors ${
+                      importMode === mode
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
+
+              {importMode === 'file' ? (
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 mb-4 text-center hover:border-blue-400 transition-colors">
+                  <input
+                    type="file"
+                    accept=".csv,.txt,.tsv"
+                    id="csv-upload"
+                    className="hidden"
+                    onChange={handleImportFileChange}
+                  />
+                  <label htmlFor="csv-upload" className="cursor-pointer block">
+                    {importFile ? (
+                      <span className="text-blue-600 font-medium text-sm">{importFile.name}</span>
+                    ) : (
+                      <span className="text-gray-400 text-sm">Click to select a file (CSV or tab-separated)</span>
+                    )}
+                  </label>
+                </div>
+              ) : (
+                <div className="mb-4">
+                  <textarea
+                    value={pasteContent}
+                    onChange={e => handlePasteChange(e.target.value)}
+                    placeholder={'Paste your 529 holdings here.\n\nExpected format:\nPortfolio\tSymbol\tNAV\tUnits\tTotal\nmy529 Fund Name\tUTVLX\t$18.03\t7,149.50\t$128,905.52'}
+                    rows={10}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm font-mono focus:ring-blue-500 focus:border-blue-500 resize-y"
+                  />
+                </div>
+              )}
+
+              {importFormat && (
+                <div className="mb-4 flex items-start gap-4">
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${
+                    importFormat === '529'
+                      ? 'bg-purple-100 text-purple-700'
+                      : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {importFormat === '529' ? '529 Tab Format' : 'Fidelity CSV'}
+                  </span>
+
+                  {importFormat === '529' && (
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Account Name <span className="text-gray-400 font-normal">(used to group holdings in your portfolio)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={accountName529}
+                        onChange={e => setAccountName529(e.target.value)}
+                        placeholder="e.g. my529 – Child 1"
+                        className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={handleImport}
-                disabled={!importFile || importing}
+                disabled={(importMode === 'file' ? !importFile : !pasteContent.trim()) || importing}
                 className="px-5 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
               >
                 {importing ? 'Importing...' : 'Import'}

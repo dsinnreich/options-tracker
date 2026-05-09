@@ -258,22 +258,137 @@ router.get('/:id/imports', (req, res) => {
   res.json(imports)
 })
 
-// POST /api/portfolio/:id/import — upload and parse a CSV
-// Body: { filename: string, content: string (raw CSV text) }
+// Detect whether content is a 529 tab-separated export.
+// Handles both with-header and headerless paste (detects ticker in col[1], $ price in col[2]).
+function is529Format(content) {
+  const firstLine = content.split(/\r?\n/)[0] || ''
+  const cols = firstLine.split('\t').map(c => c.trim())
+  const lower = cols.map(c => c.toLowerCase())
+  // With header row
+  if (lower.some(c => c === 'symbol') && lower.some(c => c === 'units')) return true
+  // Without header row: col[1] is a ticker (3-6 uppercase letters), col[2] starts with $
+  if (cols.length >= 4 && /^[A-Z]{3,6}$/.test(cols[1]) && cols[2].startsWith('$')) return true
+  return false
+}
+
+// Parse 529 tab-separated export into position objects.
+// Supports optional header row; headerless format assumes: Description, Symbol, NAV, Units, Total
+function parse529(content, accountName) {
+  const lines = content.split(/\r?\n/).filter(l => l.trim())
+  if (lines.length < 1) return []
+
+  const firstCols = lines[0].split('\t').map(c => c.trim().toLowerCase())
+  const hasHeader = firstCols.some(c => c === 'symbol') && firstCols.some(c => c === 'units')
+
+  let descIdx, symbolIdx, navIdx, unitsIdx, totalIdx
+  let startLine
+
+  if (hasHeader) {
+    const idx = (names) => {
+      for (const name of names) {
+        const i = firstCols.findIndex(h => h === name)
+        if (i !== -1) return i
+      }
+      return -1
+    }
+    symbolIdx = idx(['symbol', 'ticker'])
+    descIdx   = idx(['portfolio', 'name', 'description', 'fund name', 'investment'])
+    navIdx    = idx(['nav', 'price', 'unit value', 'share price'])
+    unitsIdx  = idx(['units', 'shares', 'quantity'])
+    totalIdx  = idx(['total', 'value', 'market value', 'current value', 'total value'])
+    startLine = 1
+  } else {
+    // Headerless: Description(0), Symbol(1), NAV(2), Units(3), Total(4)
+    descIdx = 0; symbolIdx = 1; navIdx = 2; unitsIdx = 3; totalIdx = 4
+    startLine = 0
+  }
+
+  const positions = []
+  for (let i = startLine; i < lines.length; i++) {
+    const cols = lines[i].split('\t').map(c => c.trim())
+    const symbol = symbolIdx !== -1 ? (cols[symbolIdx] || '') : ''
+    if (!symbol) continue
+    const rawUnits = unitsIdx !== -1 ? cols[unitsIdx] : ''
+    const quantity = rawUnits ? parseFloat(rawUnits.replace(/,/g, '')) : null
+    positions.push({
+      account_number:          '',
+      account_name:            accountName,
+      symbol,
+      description:             descIdx !== -1 ? (cols[descIdx] || '') : '',
+      quantity,
+      last_price:              navIdx !== -1 ? parseCurrency(cols[navIdx]) : null,
+      last_price_change:       null,
+      current_value:           totalIdx !== -1 ? parseCurrency(cols[totalIdx]) : null,
+      today_gain_loss_dollar:  null,
+      today_gain_loss_percent: null,
+      total_gain_loss_dollar:  null,
+      total_gain_loss_percent: null,
+      percent_of_account:      null,
+      cost_basis_total:        null,
+      avg_cost_basis:          null,
+      type:                    '529'
+    })
+  }
+  return positions
+}
+
+// POST /api/portfolio/:id/import — upload and parse a holdings file.
+// Body: { filename: string, content: string, accountName?: string }
+// Supports Fidelity CSV and 529 tab-separated formats (auto-detected).
 router.post('/:id/import', (req, res) => {
   const portfolio = getPortfolio(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
-  const { filename, content } = req.body
-  if (!content) return res.status(400).json({ error: 'CSV content is required' })
+  const { filename, content, accountName } = req.body
+  if (!content) return res.status(400).json({ error: 'File content is required' })
 
-  const rows = parseCSV(content)
-  if (rows.length < 2) return res.status(400).json({ error: 'CSV appears to be empty' })
+  let positions
+  let importDate
 
-  // Determine the import date from the "Date downloaded" footer line
-  const importDate = parseImportDate(rows)
+  if (is529Format(content)) {
+    const name = (accountName || '').trim() || '529'
+    positions = parse529(content, name)
+    importDate = new Date().toISOString().split('T')[0]
+  } else {
+    const rows = parseCSV(content)
+    if (rows.length < 2) return res.status(400).json({ error: 'CSV appears to be empty' })
 
-  // If an import already exists for this date, delete it so we can replace it
+    importDate = parseImportDate(rows)
+
+    // CSV columns: Account Number(0), Account Name(1), Symbol(2), Description(3),
+    //   Quantity(4), Last Price(5), Last Price Change(6), Current Value(7),
+    //   Today's Gain/Loss $(8), Today's Gain/Loss %(9), Total Gain/Loss $(10),
+    //   Total Gain/Loss %(11), Percent Of Account(12), Cost Basis Total(13),
+    //   Average Cost Basis(14), Type(15)
+    positions = []
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i]
+      const acctName = (row[1] || '').trim()
+      if (!acctName) continue
+      positions.push({
+        account_number:          (row[0]  || '').trim(),
+        account_name:            acctName,
+        symbol:                  (row[2]  || '').trim(),
+        description:             (row[3]  || '').trim(),
+        quantity:                row[4]  ? parseFloat(row[4])  : null,
+        last_price:              parseCurrency(row[5]),
+        last_price_change:       parseCurrency(row[6]),
+        current_value:           parseCurrency(row[7]),
+        today_gain_loss_dollar:  parseCurrency(row[8]),
+        today_gain_loss_percent: parsePercent(row[9]),
+        total_gain_loss_dollar:  parseCurrency(row[10]),
+        total_gain_loss_percent: parsePercent(row[11]),
+        percent_of_account:      parsePercent(row[12]),
+        cost_basis_total:        parseCurrency(row[13]),
+        avg_cost_basis:          parseCurrency(row[14]),
+        type:                    (row[15] || '').trim()
+      })
+    }
+  }
+
+  if (positions.length === 0) return res.status(400).json({ error: 'No positions found in file' })
+
+  // If an import already exists for this date, replace it
   const existing = db.prepare(
     'SELECT id FROM portfolio_imports WHERE portfolio_id = ? AND import_date = ?'
   ).get(portfolio.id, importDate)
@@ -282,43 +397,6 @@ router.post('/:id/import', (req, res) => {
     db.prepare('DELETE FROM portfolio_imports WHERE id = ?').run(existing.id)
   }
 
-  // Parse positions (skip header row at index 0)
-  // CSV columns: Account Number(0), Account Name(1), Symbol(2), Description(3),
-  //   Quantity(4), Last Price(5), Last Price Change(6), Current Value(7),
-  //   Today's Gain/Loss $(8), Today's Gain/Loss %(9), Total Gain/Loss $(10),
-  //   Total Gain/Loss %(11), Percent Of Account(12), Cost Basis Total(13),
-  //   Average Cost Basis(14), Type(15)
-  const positions = []
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i]
-    const accountName = (row[1] || '').trim()
-    // Skip footer and empty rows (no Account Name)
-    if (!accountName) continue
-    const symbol = (row[2] || '').trim()
-
-    positions.push({
-      account_number:          (row[0]  || '').trim(),
-      account_name:            accountName,
-      symbol:                  symbol,
-      description:             (row[3]  || '').trim(),
-      quantity:                row[4]  ? parseFloat(row[4])  : null,
-      last_price:              parseCurrency(row[5]),
-      last_price_change:       parseCurrency(row[6]),
-      current_value:           parseCurrency(row[7]),
-      today_gain_loss_dollar:  parseCurrency(row[8]),
-      today_gain_loss_percent: parsePercent(row[9]),
-      total_gain_loss_dollar:  parseCurrency(row[10]),
-      total_gain_loss_percent: parsePercent(row[11]),
-      percent_of_account:      parsePercent(row[12]),
-      cost_basis_total:        parseCurrency(row[13]),
-      avg_cost_basis:          parseCurrency(row[14]),
-      type:                    (row[15] || '').trim()
-    })
-  }
-
-  if (positions.length === 0) return res.status(400).json({ error: 'No positions found in CSV' })
-
-  // Insert import record + positions in one transaction
   const importResult = db.prepare(
     'INSERT INTO portfolio_imports (portfolio_id, import_date, filename) VALUES (?, ?, ?)'
   ).run(portfolio.id, importDate, filename || 'import.csv')
@@ -334,8 +412,8 @@ router.post('/:id/import', (req, res) => {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
 
-  const insertAll = db.transaction((rows) => {
-    for (const p of rows) {
+  const insertAll = db.transaction((ps) => {
+    for (const p of ps) {
       insertPos.run(
         importId, p.account_number, p.account_name, p.symbol, p.description, p.quantity,
         p.last_price, p.last_price_change, p.current_value, p.today_gain_loss_dollar,

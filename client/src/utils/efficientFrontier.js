@@ -11,7 +11,7 @@ function randomWeights(n) {
 
 // Single-factor (S&P 500) correlation proxy using downside capture ratios:
 // corr(A,B) ≈ (DC_A/100) * (DC_B/100)
-function buildCorrMatrix(etfs) {
+export function buildProxyCorrMatrix(etfs) {
   const dc = etfs.map(e => (e.downside_capture_3y ?? 100) / 100)
   return etfs.map((_, i) =>
     etfs.map((_, j) =>
@@ -36,10 +36,12 @@ function portfolioStats(weights, returns, stdDevs, corrMatrix, riskFreeRate) {
 // Returns { frontier: Portfolio[], background: Portfolio[] }
 // where Portfolio = { weights: number[], ret: number, std: number, sharpe: number }
 // All values in decimal form (e.g. 0.08 = 8%)
-export function computeEfficientFrontier(etfs, returnField, riskFreeRate) {
+// corrMatrix: optional pre-computed pairwise correlation matrix (ordered to match etfs).
+//   If omitted, falls back to the downside-capture S&P 500 proxy.
+export function computeEfficientFrontier(etfs, returnField, riskFreeRate, corrMatrix = null) {
   const returns = etfs.map(e => (e[returnField] ?? 0) / 100)
   const stdDevs = etfs.map(e => (e.std_dev_3y ?? 15) / 100)
-  const corrMatrix = buildCorrMatrix(etfs)
+  if (!corrMatrix) corrMatrix = buildProxyCorrMatrix(etfs)
 
   const simulate = weights => portfolioStats(weights, returns, stdDevs, corrMatrix, riskFreeRate)
 

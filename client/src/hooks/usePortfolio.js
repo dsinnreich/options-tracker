@@ -59,12 +59,12 @@ export function usePortfolio() {
     return res.json()
   }, [])
 
-  const importCSV = useCallback(async (portfolioId, filename, content) => {
+  const importCSV = useCallback(async (portfolioId, filename, content, accountName) => {
     const res = await fetch(`${API}/${portfolioId}/import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ filename, content })
+      body: JSON.stringify({ filename, content, accountName })
     })
     if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
     return res.json()

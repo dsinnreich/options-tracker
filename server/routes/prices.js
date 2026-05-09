@@ -117,4 +117,98 @@ router.post('/refresh-all', async (req, res) => {
   }
 })
 
+// POST /api/prices/correlations
+// Body: { symbols: string[] }
+// Returns: { symbols, matrix, tradingDays, from, to, skipped? }
+router.post('/correlations', async (req, res) => {
+  try {
+    const { symbols } = req.body
+    if (!Array.isArray(symbols) || symbols.length < 2) {
+      return res.status(400).json({ error: 'At least 2 symbols required' })
+    }
+
+    const toDate = new Date().toISOString().split('T')[0]
+    const fromDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+    // Fetch daily candles for each symbol in parallel
+    const skipped = []
+    const seriesMap = {} // symbol → Map<timestamp, close>
+
+    await Promise.all(symbols.map(async (symbol) => {
+      try {
+        const data = await fetchWithAuth(
+          `${MARKETDATA_API}/stocks/candles/D/${symbol.toUpperCase()}/?from=${fromDate}&to=${toDate}&adjustsplits=true`
+        )
+        if (data.s !== 'ok' || !data.t || data.t.length < 20) {
+          skipped.push(symbol)
+          return
+        }
+        const m = new Map()
+        for (let i = 0; i < data.t.length; i++) {
+          m.set(data.t[i], data.c[i])
+        }
+        seriesMap[symbol] = m
+      } catch {
+        skipped.push(symbol)
+      }
+    }))
+
+    const validSymbols = symbols.filter(s => seriesMap[s])
+    if (validSymbols.length < 2) {
+      return res.status(400).json({ error: 'Could not fetch price data for enough symbols', skipped })
+    }
+
+    // Find timestamps present in every symbol's data
+    const sets = validSymbols.map(s => new Set(seriesMap[s].keys()))
+    const commonTimestamps = [...sets[0]]
+      .filter(t => sets.every(s => s.has(t)))
+      .sort((a, b) => a - b)
+
+    if (commonTimestamps.length < 21) {
+      return res.status(400).json({ error: 'Not enough overlapping trading days to compute correlations' })
+    }
+
+    // Compute daily log returns for each symbol
+    const logReturns = {}
+    for (const symbol of validSymbols) {
+      const closes = commonTimestamps.map(t => seriesMap[symbol].get(t))
+      const rets = []
+      for (let i = 1; i < closes.length; i++) {
+        rets.push(Math.log(closes[i] / closes[i - 1]))
+      }
+      logReturns[symbol] = rets
+    }
+
+    // Pearson correlation
+    function mean(arr) {
+      return arr.reduce((a, b) => a + b, 0) / arr.length
+    }
+    function pearson(a, b) {
+      const ma = mean(a), mb = mean(b)
+      let num = 0, da = 0, db = 0
+      for (let i = 0; i < a.length; i++) {
+        const x = a[i] - ma, y = b[i] - mb
+        num += x * y; da += x * x; db += y * y
+      }
+      const denom = Math.sqrt(da * db)
+      return denom === 0 ? 0 : Math.max(-1, Math.min(1, num / denom))
+    }
+
+    const matrix = validSymbols.map((si, i) =>
+      validSymbols.map((sj, j) => i === j ? 1 : pearson(logReturns[si], logReturns[sj]))
+    )
+
+    res.json({
+      symbols: validSymbols,
+      matrix,
+      from: fromDate,
+      to: toDate,
+      tradingDays: commonTimestamps.length - 1,
+      ...(skipped.length > 0 ? { skipped } : {})
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 export default router
