@@ -12,10 +12,19 @@ function requireAdmin(req, res, next) {
   next()
 }
 
+// Middleware to require fresh admin step-up verification (TOTP re-verify within last hour)
+function requireAdminVerified(req, res, next) {
+  const { adminVerifiedAt } = req.session
+  if (!adminVerifiedAt || Date.now() - adminVerifiedAt > 3600000) {
+    return res.status(403).json({ error: 'admin_verify_required' })
+  }
+  next()
+}
+
 // Get all users (admin only)
-router.get('/users', requireAdmin, (req, res) => {
+router.get('/users', requireAdmin, requireAdminVerified, (req, res) => {
   try {
-    const users = db.prepare('SELECT id, email, name, is_admin, created_at FROM users ORDER BY created_at DESC').all()
+    const users = db.prepare('SELECT id, email, name, is_admin, totp_enabled, created_at FROM users ORDER BY created_at DESC').all()
     res.json(users)
   } catch (error) {
     console.error('Get users error:', error)
@@ -24,7 +33,7 @@ router.get('/users', requireAdmin, (req, res) => {
 })
 
 // Create a new user (admin only)
-router.post('/users', requireAdmin, async (req, res) => {
+router.post('/users', requireAdmin, requireAdminVerified, async (req, res) => {
   try {
     const { email, name, password, isAdmin } = req.body
 
@@ -68,7 +77,7 @@ router.post('/users', requireAdmin, async (req, res) => {
 })
 
 // Delete a user (admin only)
-router.delete('/users/:id', requireAdmin, (req, res) => {
+router.delete('/users/:id', requireAdmin, requireAdminVerified, (req, res) => {
   try {
     const userId = parseInt(req.params.id)
 
@@ -98,7 +107,7 @@ router.delete('/users/:id', requireAdmin, (req, res) => {
 })
 
 // Update user (admin only)
-router.put('/users/:id', requireAdmin, async (req, res) => {
+router.put('/users/:id', requireAdmin, requireAdminVerified, async (req, res) => {
   try {
     const userId = parseInt(req.params.id)
     const { email, name, password, isAdmin } = req.body

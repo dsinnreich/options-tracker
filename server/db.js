@@ -363,10 +363,48 @@ const migrations = [
 
       console.log('✅ Migrated to version 8: Added etf_watchlists and linked imports')
     }
-  }
+  },
+  {
+    version: 9,
+    up(db) {
+      try { db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`) } catch(e) { if (!e.message.includes('duplicate')) throw e }
+      try { db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`) } catch(e) { if (!e.message.includes('duplicate')) throw e }
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS trusted_devices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          token_hash TEXT NOT NULL UNIQUE,
+          label TEXT,
+          country TEXT,
+          ip TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          last_used_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          expires_at TEXT NOT NULL
+        )
+      `)
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS login_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          email TEXT,
+          ip TEXT,
+          country TEXT,
+          success INTEGER NOT NULL DEFAULT 0,
+          failure_reason TEXT,
+          trusted_device_id INTEGER REFERENCES trusted_devices(id) ON DELETE SET NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+
+      console.log('✅ Migrated to version 9: Added TOTP 2FA, trusted_devices, login_history')
+    }
+  },
 ]
 
 // Run pending migrations
+
 function runMigrations() {
   const currentVersion = getCurrentVersion()
 

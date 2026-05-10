@@ -2,22 +2,28 @@ import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate, useLocation } from 'react-router-dom'
 
+// step: 'credentials' | 'totp' | 'setup' | 'forgot'
 function Login() {
+  const [step, setStep] = useState('credentials')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [totpCode, setTotpCode] = useState('')
+  const [rememberDevice, setRememberDevice] = useState(false)
+  const [setupQr, setSetupQr] = useState(null)
+  const [setupSecret, setSetupSecret] = useState(null)
+  const [setupCode, setSetupCode] = useState('')
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotMessage, setForgotMessage] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [showForgotPassword, setShowForgotPassword] = useState(false)
-  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('')
-  const [forgotPasswordMessage, setForgotPasswordMessage] = useState('')
 
-  const { login, forgotPassword } = useAuth()
+  const { login, submitTotp, getSetupSecret, enableTotp, forgotPassword } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
   const from = location.state?.from?.pathname || '/'
 
-  const handleSubmit = async (e) => {
+  const handleCredentials = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
@@ -26,6 +32,18 @@ function Login() {
 
     if (result.success) {
       navigate(from, { replace: true })
+    } else if (result.requires2fa) {
+      setStep('totp')
+    } else if (result.requiresTotpSetup) {
+      // Kick off setup immediately — fetch QR
+      const secret = await getSetupSecret()
+      if (secret.success) {
+        setSetupQr(secret.qrDataUrl)
+        setSetupSecret(secret.secret)
+        setStep('setup')
+      } else {
+        setError(secret.error || 'Failed to load 2FA setup')
+      }
     } else {
       setError(result.error || 'Login failed')
     }
@@ -33,17 +51,51 @@ function Login() {
     setLoading(false)
   }
 
-  const handleForgotPassword = async (e) => {
+  const handleTotp = async (e) => {
     e.preventDefault()
     setError('')
-    setForgotPasswordMessage('')
     setLoading(true)
 
-    const result = await forgotPassword(forgotPasswordEmail)
+    const result = await submitTotp(totpCode.trim(), rememberDevice)
 
     if (result.success) {
-      setForgotPasswordMessage(result.message)
-      setForgotPasswordEmail('')
+      navigate(from, { replace: true })
+    } else {
+      setError(result.error || 'Invalid code')
+      setTotpCode('')
+    }
+
+    setLoading(false)
+  }
+
+  const handleSetup = async (e) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    const result = await enableTotp(setupCode.trim())
+
+    if (result.success) {
+      navigate(from, { replace: true })
+    } else {
+      setError(result.error || 'Invalid code — try again')
+      setSetupCode('')
+    }
+
+    setLoading(false)
+  }
+
+  const handleForgot = async (e) => {
+    e.preventDefault()
+    setError('')
+    setForgotMessage('')
+    setLoading(true)
+
+    const result = await forgotPassword(forgotEmail)
+
+    if (result.success) {
+      setForgotMessage(result.message)
+      setForgotEmail('')
     } else {
       setError(result.error || 'Failed to send reset email')
     }
@@ -59,26 +111,29 @@ function Login() {
             Options Tracker
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            {showForgotPassword ? 'Reset your password' : 'Sign in to your account'}
+            {step === 'credentials' && 'Sign in to your account'}
+            {step === 'totp' && 'Two-factor authentication'}
+            {step === 'setup' && 'Set up two-factor authentication'}
+            {step === 'forgot' && 'Reset your password'}
           </p>
         </div>
 
-        {!showForgotPassword ? (
-          <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-            <div className="rounded-md shadow-sm space-y-4">
+        {/* ── Step 1: Email + Password ── */}
+        {step === 'credentials' && (
+          <form className="mt-8 space-y-6" onSubmit={handleCredentials}>
+            <div className="space-y-4">
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
                   Email address
                 </label>
                 <input
                   id="email"
-                  name="email"
                   type="email"
                   autoComplete="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   placeholder="Enter your email"
                 />
               </div>
@@ -88,103 +143,180 @@ function Login() {
                 </label>
                 <input
                   id="password"
-                  name="password"
                   type="password"
                   autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   placeholder="Enter your password"
                 />
               </div>
             </div>
 
-            {error && (
-              <div className="rounded-md bg-red-50 p-4">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            )}
+            {error && <div className="rounded-md bg-red-50 p-4"><p className="text-sm text-red-700">{error}</p></div>}
 
             <div className="flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => {
-                  setShowForgotPassword(true)
-                  setError('')
-                }}
+                onClick={() => { setStep('forgot'); setError('') }}
                 className="text-sm font-medium text-blue-600 hover:text-blue-500"
               >
                 Forgot your password?
               </button>
             </div>
 
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Signing in...' : 'Sign in'}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Signing in…' : 'Sign in'}
+            </button>
           </form>
-        ) : (
-          <form className="mt-8 space-y-6" onSubmit={handleForgotPassword}>
-            <div className="rounded-md shadow-sm">
-              <div>
-                <label htmlFor="forgot-email" className="block text-sm font-medium text-gray-700 mb-1">
-                  Email address
-                </label>
-                <input
-                  id="forgot-email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={forgotPasswordEmail}
-                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                  className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                  placeholder="Enter your email"
-                />
-              </div>
+        )}
+
+        {/* ── Step 2a: TOTP verify ── */}
+        {step === 'totp' && (
+          <form className="mt-8 space-y-6" onSubmit={handleTotp}>
+            <p className="text-sm text-gray-600">
+              Enter the 6-digit code from your authenticator app.
+            </p>
+
+            <div>
+              <label htmlFor="totp" className="block text-sm font-medium text-gray-700 mb-1">
+                Authentication code
+              </label>
+              <input
+                id="totp"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                autoComplete="one-time-code"
+                autoFocus
+                required
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 text-center text-xl tracking-widest focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                placeholder="000000"
+              />
             </div>
 
-            {error && (
-              <div className="rounded-md bg-red-50 p-4">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            )}
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberDevice}
+                onChange={(e) => setRememberDevice(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Remember this device for 30 days
+            </label>
 
-            {forgotPasswordMessage && (
-              <div className="rounded-md bg-green-50 p-4">
-                <p className="text-sm text-green-700">{forgotPasswordMessage}</p>
-              </div>
-            )}
+            {error && <div className="rounded-md bg-red-50 p-4"><p className="text-sm text-red-700">{error}</p></div>}
+
+            <button
+              type="submit"
+              disabled={loading || totpCode.length < 6}
+              className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Verifying…' : 'Verify'}
+            </button>
+          </form>
+        )}
+
+        {/* ── Step 2b: TOTP first-time setup ── */}
+        {step === 'setup' && (
+          <form className="mt-8 space-y-6" onSubmit={handleSetup}>
+            <div className="space-y-3">
+              <p className="text-sm text-gray-700 font-medium">
+                Scan this QR code with Google Authenticator, Authy, or any TOTP app.
+              </p>
+              {setupQr && (
+                <div className="flex justify-center">
+                  <img src={setupQr} alt="TOTP QR code" className="w-48 h-48 border rounded" />
+                </div>
+              )}
+              {setupSecret && (
+                <p className="text-xs text-gray-500 text-center break-all">
+                  Manual key: <span className="font-mono">{setupSecret}</span>
+                </p>
+              )}
+              <p className="text-sm text-gray-600">
+                Then enter the 6-digit code shown in the app to confirm setup.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="setup-code" className="block text-sm font-medium text-gray-700 mb-1">
+                Verification code
+              </label>
+              <input
+                id="setup-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                autoComplete="one-time-code"
+                required
+                value={setupCode}
+                onChange={(e) => setSetupCode(e.target.value.replace(/\D/g, ''))}
+                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 text-center text-xl tracking-widest focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                placeholder="000000"
+              />
+            </div>
+
+            {error && <div className="rounded-md bg-red-50 p-4"><p className="text-sm text-red-700">{error}</p></div>}
+
+            <button
+              type="submit"
+              disabled={loading || setupCode.length < 6}
+              className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Activating…' : 'Activate 2FA & Sign in'}
+            </button>
+          </form>
+        )}
+
+        {/* ── Forgot password ── */}
+        {step === 'forgot' && (
+          <form className="mt-8 space-y-6" onSubmit={handleForgot}>
+            <div>
+              <label htmlFor="forgot-email" className="block text-sm font-medium text-gray-700 mb-1">
+                Email address
+              </label>
+              <input
+                id="forgot-email"
+                type="email"
+                autoComplete="email"
+                required
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                placeholder="Enter your email"
+              />
+            </div>
+
+            {error && <div className="rounded-md bg-red-50 p-4"><p className="text-sm text-red-700">{error}</p></div>}
+            {forgotMessage && <div className="rounded-md bg-green-50 p-4"><p className="text-sm text-green-700">{forgotMessage}</p></div>}
 
             <div className="flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => {
-                  setShowForgotPassword(false)
-                  setError('')
-                  setForgotPasswordMessage('')
-                }}
+                onClick={() => { setStep('credentials'); setError(''); setForgotMessage('') }}
                 className="text-sm font-medium text-blue-600 hover:text-blue-500"
               >
                 Back to sign in
               </button>
             </div>
 
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Sending...' : 'Send reset link'}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Sending…' : 'Send reset link'}
+            </button>
           </form>
         )}
       </div>
