@@ -2,7 +2,7 @@ import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import crypto from 'crypto'
 import nodemailer from 'nodemailer'
-import { authenticator } from 'otplib'
+import { generateSecret, generateURI, verifySync } from 'otplib'
 import QRCode from 'qrcode'
 import db from '../db.js'
 
@@ -180,7 +180,7 @@ router.post('/2fa/verify', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(pendingUserId)
   if (!user?.totp_secret) return res.status(400).json({ error: 'User not found or 2FA not configured' })
 
-  const valid = authenticator.check(code.replace(/\s/g, ''), user.totp_secret)
+  const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
   if (!valid) {
     logLogin(user.id, user.email, req.session.pendingIp, req.session.pendingCountry, false, 'wrong_totp')
     return res.status(401).json({ error: 'Invalid code. Please try again.' })
@@ -212,8 +212,8 @@ router.get('/2fa/setup-secret', async (req, res) => {
   const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(userId)
   if (!user) return res.status(404).json({ error: 'User not found' })
 
-  const secret = authenticator.generateSecret()
-  const otpauth = authenticator.keyuri(user.email, APP_NAME, secret)
+  const secret = generateSecret()
+  const otpauth = generateURI({ label: user.email, issuer: APP_NAME, secret, type: 'totp' })
   const qrDataUrl = await QRCode.toDataURL(otpauth)
 
   // Store the secret temporarily so we can verify it before enabling
@@ -232,7 +232,7 @@ router.post('/2fa/enable', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
   if (!user?.totp_secret) return res.status(400).json({ error: '2FA secret not generated yet' })
 
-  const valid = authenticator.check(code.replace(/\s/g, ''), user.totp_secret)
+  const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
   if (!valid) return res.status(401).json({ error: 'Invalid code — make sure your authenticator clock is synced' })
 
   db.prepare('UPDATE users SET totp_enabled = 1 WHERE id = ?').run(userId)
@@ -263,7 +263,7 @@ router.post('/2fa/disable', async (req, res) => {
   const validPw = await bcrypt.compare(password, user.password_hash)
   if (!validPw) return res.status(401).json({ error: 'Incorrect password' })
 
-  const validCode = authenticator.check(code.replace(/\s/g, ''), user.totp_secret)
+  const validCode = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
   if (!validCode) return res.status(401).json({ error: 'Invalid authenticator code' })
 
   db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(user.id)
@@ -280,7 +280,7 @@ router.post('/admin-verify', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId)
   if (!user?.totp_secret) return res.status(400).json({ error: '2FA not configured' })
 
-  const valid = authenticator.check(code.replace(/\s/g, ''), user.totp_secret)
+  const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
   if (!valid) return res.status(401).json({ error: 'Invalid code' })
 
   req.session.adminVerifiedAt = Date.now()
