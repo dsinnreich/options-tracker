@@ -2,7 +2,55 @@ import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import crypto from 'crypto'
 import nodemailer from 'nodemailer'
-import { generateSecret, generateURI, verifySync } from 'otplib'
+// Pure Node.js TOTP — no dependency on Web Crypto API (avoids otplib's
+// globalThis.crypto requirement which is absent on some Node versions)
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+
+function totpGenerateSecret(byteLength = 20) {
+  const bytes = crypto.randomBytes(byteLength)
+  let out = '', bits = 0, val = 0
+  for (const b of bytes) {
+    val = (val << 8) | b; bits += 8
+    while (bits >= 5) { bits -= 5; out += BASE32[(val >>> bits) & 31] }
+  }
+  if (bits > 0) out += BASE32[(val << (5 - bits)) & 31]
+  return out
+}
+
+function totpBase32Decode(str) {
+  const s = str.toUpperCase().replace(/=+$/, '')
+  const bytes = []; let bits = 0, val = 0
+  for (const c of s) {
+    const i = BASE32.indexOf(c); if (i === -1) continue
+    val = (val << 5) | i; bits += 5
+    if (bits >= 8) { bits -= 8; bytes.push((val >>> bits) & 0xff) }
+  }
+  return Buffer.from(bytes)
+}
+
+function totpCode(secret, counter) {
+  const key = totpBase32Decode(secret)
+  const buf = Buffer.alloc(8)
+  buf.writeBigUInt64BE(BigInt(counter))
+  const digest = crypto.createHmac('sha1', key).update(buf).digest()
+  const offset = digest[19] & 0xf
+  const code = ((digest[offset] & 0x7f) << 24) | ((digest[offset+1] & 0xff) << 16) |
+               ((digest[offset+2] & 0xff) << 8) | (digest[offset+3] & 0xff)
+  return String(code % 1_000_000).padStart(6, '0')
+}
+
+function totpVerify(token, secret, windowSize = 1) {
+  const t = String(token).replace(/\s/g, '')
+  const counter = Math.floor(Date.now() / 30000)
+  for (let i = -windowSize; i <= windowSize; i++) {
+    if (totpCode(secret, counter + i) === t) return true
+  }
+  return false
+}
+
+function totpUri(email, issuer, secret) {
+  return `otpauth://totp/${encodeURIComponent(issuer + ':' + email)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}`
+}
 import QRCode from 'qrcode'
 import db from '../db.js'
 
@@ -185,7 +233,7 @@ router.post('/2fa/verify', async (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(pendingUserId)
     if (!user?.totp_secret) return res.status(400).json({ error: 'User not found or 2FA not configured' })
 
-    const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
+    const valid = totpVerify(code, user.totp_secret)
     if (!valid) {
       logLogin(user.id, user.email, req.session.pendingIp, req.session.pendingCountry, false, 'wrong_totp')
       return res.status(401).json({ error: 'Invalid code. Please try again.' })
@@ -222,8 +270,8 @@ router.get('/2fa/setup-secret', async (req, res) => {
     const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(userId)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
-    const secret = generateSecret()
-    const otpauth = generateURI({ label: user.email, issuer: APP_NAME, secret, type: 'totp' })
+    const secret = totpGenerateSecret()
+    const otpauth = totpUri(user.email, APP_NAME, secret)
     const qrDataUrl = await QRCode.toDataURL(otpauth)
 
     db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(secret, userId)
@@ -246,7 +294,7 @@ router.post('/2fa/enable', async (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
     if (!user?.totp_secret) return res.status(400).json({ error: '2FA secret not generated yet' })
 
-    const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
+    const valid = totpVerify(code, user.totp_secret)
     if (!valid) return res.status(401).json({ error: 'Invalid code — make sure your authenticator clock is synced' })
 
     db.prepare('UPDATE users SET totp_enabled = 1 WHERE id = ?').run(userId)
@@ -281,7 +329,7 @@ router.post('/2fa/disable', async (req, res) => {
     const validPw = await bcrypt.compare(password, user.password_hash)
     if (!validPw) return res.status(401).json({ error: 'Incorrect password' })
 
-    const validCode = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
+    const validCode = totpVerify(code, user.totp_secret)
     if (!validCode) return res.status(401).json({ error: 'Invalid authenticator code' })
 
     db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(user.id)
@@ -302,7 +350,7 @@ router.post('/admin-verify', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId)
   if (!user?.totp_secret) return res.status(400).json({ error: '2FA not configured' })
 
-  const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
+  const valid = totpVerify(code, user.totp_secret)
   if (!valid) return res.status(401).json({ error: 'Invalid code' })
 
   req.session.adminVerifiedAt = Date.now()
