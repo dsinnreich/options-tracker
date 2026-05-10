@@ -19,7 +19,12 @@ export default function PortfolioDashboard() {
     importHistory, getHistoryAccounts, getLastTransactions
   } = usePortfolio()
 
-  const { data: researchData, activeWatchlist: researchWatchlist } = useResearch()
+  const {
+    data: researchData,
+    watchlists: researchWatchlists,
+    activeWatchlist: researchWatchlist,
+    selectWatchlist: selectResearchWatchlist
+  } = useResearch()
 
   const [activePortfolioId, setActivePortfolioId] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
@@ -669,20 +674,39 @@ export default function PortfolioDashboard() {
           {/* ANALYSIS TAB */}
           {activeTab === 'analysis' && (
             <div>
-              {imports.length > 0 && (
-                <div className="flex items-center gap-3 mb-5">
-                  <label className="text-sm font-medium text-gray-600">Showing data for:</label>
-                  <select
-                    value={selectedImportId || ''}
-                    onChange={e => handleImportChange(Number(e.target.value))}
-                    className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  >
-                    {imports.map(imp => (
-                      <option key={imp.id} value={imp.id}>{imp.import_date}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div className="flex items-center gap-6 mb-5">
+                {imports.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium text-gray-600">Portfolio date:</label>
+                    <select
+                      value={selectedImportId || ''}
+                      onChange={e => handleImportChange(Number(e.target.value))}
+                      className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    >
+                      {imports.map(imp => (
+                        <option key={imp.id} value={imp.id}>{imp.import_date}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {researchWatchlists.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium text-gray-600">Research watchlist:</label>
+                    <select
+                      value={researchWatchlist?.id || ''}
+                      onChange={e => {
+                        const wl = researchWatchlists.find(w => w.id === Number(e.target.value))
+                        if (wl) selectResearchWatchlist(wl)
+                      }}
+                      className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    >
+                      {researchWatchlists.map(wl => (
+                        <option key={wl.id} value={wl.id}>{wl.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
               {dataLoading ? (
                 <div className="flex items-center justify-center h-48 text-gray-400">Loading...</div>
               ) : (
