@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useCallback } from 'react'
 
 // --- Formatters ---
 const fmtPct = (n) => {
@@ -12,13 +12,16 @@ const fmtNum = (n, decimals = 2) => {
 
 // --- Column definitions ---
 const RESEARCH_COLS = [
-  { key: 'std_dev_3y',       label: 'Std Dev',  sub: '3Y',  fmt: n => fmtNum(n),  color: false },
-  { key: 'sharpe_ratio_3y',  label: 'Sharpe',   sub: '3Y',  fmt: n => fmtNum(n),  color: false },
-  { key: 'alpha_3y',         label: 'Alpha',    sub: '3Y',  fmt: n => fmtNum(n),  color: true  },
+  { key: 'total_return_1m',  label: 'Return',   sub: '1M',  fmt: n => fmtPct(n),  color: true  },
+  { key: 'total_return_3m',  label: 'Return',   sub: '3M',  fmt: n => fmtPct(n),  color: true  },
+  { key: 'total_return_6m',  label: 'Return',   sub: '6M',  fmt: n => fmtPct(n),  color: true  },
   { key: 'total_return_ytd', label: 'Return',   sub: 'YTD', fmt: n => fmtPct(n),  color: true  },
   { key: 'total_return_1y',  label: 'Return',   sub: '1Y',  fmt: n => fmtPct(n),  color: true  },
   { key: 'total_return_3y',  label: 'Return',   sub: '3Y',  fmt: n => fmtPct(n),  color: true  },
   { key: 'total_return_5y',  label: 'Return',   sub: '5Y',  fmt: n => fmtPct(n),  color: true  },
+  { key: 'std_dev_3y',       label: 'Std Dev',  sub: '3Y',  fmt: n => fmtNum(n),  color: false },
+  { key: 'sharpe_ratio_3y',  label: 'Sharpe',   sub: '3Y',  fmt: n => fmtNum(n),  color: false },
+  { key: 'alpha_3y',         label: 'Alpha',    sub: '3Y',  fmt: n => fmtNum(n),  color: true  },
 ]
 
 // Value-weighted average of research fields across a list of holdings
@@ -115,9 +118,34 @@ function buildPivot(positions, assetClassMap) {
 
 // --- Component ---
 
+const NAME_COL_KEY = 'analysisNameColWidth'
+const NAME_COL_DEFAULT = 280
+
 export default function PortfolioResearchView({ positions, assetClassMap, researchData, researchWatchlist }) {
   const [expandedAC, setExpandedAC] = useState({})
   const [expandedStyles, setExpandedStyles] = useState({})
+  const [nameColWidth, setNameColWidth] = useState(() => {
+    const saved = localStorage.getItem(NAME_COL_KEY)
+    return saved ? Number(saved) : NAME_COL_DEFAULT
+  })
+  const dragState = useRef(null)
+
+  const startNameResize = useCallback((e) => {
+    e.preventDefault()
+    dragState.current = { startX: e.clientX, startW: nameColWidth }
+    const onMove = (ev) => {
+      const newW = Math.max(120, dragState.current.startW + ev.clientX - dragState.current.startX)
+      setNameColWidth(newW)
+    }
+    const onUp = (ev) => {
+      const newW = Math.max(120, dragState.current.startW + ev.clientX - dragState.current.startX)
+      localStorage.setItem(NAME_COL_KEY, newW)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [nameColWidth])
 
   const researchByTicker = useMemo(() => {
     const map = {}
@@ -206,7 +234,13 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-3 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 140 }}>Asset Class</th>
               <th className="px-3 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 120 }}>Style</th>
-              <th className="px-3 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wide" style={{ minWidth: 240 }}>Name</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wide relative" style={{ width: nameColWidth, minWidth: 120 }}>
+                Name
+                <span
+                  onMouseDown={startNameResize}
+                  className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-blue-200 opacity-50"
+                />
+              </th>
               <th className="px-3 py-2.5 text-right font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 90 }}>Current %</th>
               {RESEARCH_COLS.map(col => (
                 <th key={col.key} className="px-3 py-2.5 text-right font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 76 }}>
@@ -230,7 +264,7 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
                       className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-3 py-1 text-gray-300">└</td>
                     <td className="px-3 py-1 text-gray-300">└</td>
-                    <td className="px-3 py-1">
+                    <td className="px-3 py-1 overflow-hidden" style={{ width: nameColWidth, maxWidth: nameColWidth }}>
                       <span className="font-medium text-gray-900">{hRow.symbol}</span>
                       {hRow.description && (
                         <span className="ml-2 text-gray-400 truncate" title={hRow.description}> {hRow.description}</span>
