@@ -191,11 +191,9 @@ function Login() {
                 id="totp"
                 type="text"
                 inputMode="numeric"
-                pattern="[0-9]{6}"
                 maxLength={6}
                 autoComplete="one-time-code"
                 autoFocus
-                required
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
                 className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 text-center text-xl tracking-widest focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
@@ -255,10 +253,8 @@ function Login() {
                 id="setup-code"
                 type="text"
                 inputMode="numeric"
-                pattern="[0-9]{6}"
                 maxLength={6}
                 autoComplete="one-time-code"
-                required
                 value={setupCode}
                 onChange={(e) => setSetupCode(e.target.value.replace(/\D/g, ''))}
                 className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 text-center text-xl tracking-widest focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
