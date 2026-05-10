@@ -109,165 +109,187 @@ function setFullSession(req, user) {
 // ─── login ────────────────────────────────────────────────────────────────────
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body
-  const ip = getClientIp(req)
+  try {
+    const { email, password } = req.body
+    const ip = getClientIp(req)
 
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' })
-  }
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' })
+    }
 
-  // Rate limit check
-  if (isRateLimited(email)) {
-    return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' })
-  }
+    if (isRateLimited(email)) {
+      return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' })
+    }
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
-  if (!user) {
-    logLogin(null, email, ip, null, false, 'user_not_found')
-    return res.status(401).json({ error: 'Invalid email or password' })
-  }
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
+    if (!user) {
+      logLogin(null, email, ip, null, false, 'user_not_found')
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
 
-  const validPassword = await bcrypt.compare(password, user.password_hash)
-  if (!validPassword) {
-    logLogin(user.id, email, ip, null, false, 'wrong_password')
-    return res.status(401).json({ error: 'Invalid email or password' })
-  }
+    const validPassword = await bcrypt.compare(password, user.password_hash)
+    if (!validPassword) {
+      logLogin(user.id, email, ip, null, false, 'wrong_password')
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
 
-  // Password correct. Does user need to set up 2FA first?
-  if (!user.totp_enabled) {
-    req.session.setupUserId = user.id
-    return req.session.save(() => res.json({ requiresTotpSetup: true }))
-  }
+    // Password correct. Does user need to set up 2FA first?
+    if (!user.totp_enabled) {
+      req.session.setupUserId = user.id
+      return req.session.save(() => res.json({ requiresTotpSetup: true }))
+    }
 
-  // Check trusted device cookie
-  const device = checkTrustedDevice(req, user.id)
-  if (device) {
+    // Check trusted device cookie
+    const device = checkTrustedDevice(req, user.id)
+    if (device) {
+      const country = await getCountry(ip)
+      logLogin(user.id, email, ip, country, true, null, device.id)
+      setFullSession(req, user)
+      return req.session.save((err) => {
+        if (err) return res.status(500).json({ error: 'Session error' })
+        return res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1 } })
+      })
+    }
+
+    // Needs TOTP — get country for anomaly info
     const country = await getCountry(ip)
-    logLogin(user.id, email, ip, country, true, null, device.id)
-    setFullSession(req, user)
-    return req.session.save((err) => {
-      if (err) return res.status(500).json({ error: 'Session error' })
-      return res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1 } })
-    })
+    const previousCountries = db.prepare(`
+      SELECT DISTINCT country FROM login_history
+      WHERE user_id = ? AND success = 1 AND country IS NOT NULL
+      ORDER BY created_at DESC LIMIT 10
+    `).all(user.id).map(r => r.country)
+    const newCountry = country && previousCountries.length > 0 && !previousCountries.includes(country)
+
+    req.session.pendingUserId = user.id
+    req.session.pendingIp = ip
+    req.session.pendingCountry = country
+    req.session.save(() =>
+      res.json({ requires2fa: true, newCountry: newCountry || false, country: country || null })
+    )
+  } catch (err) {
+    console.error('login error:', err)
+    res.status(500).json({ error: 'Login failed: ' + err.message })
   }
-
-  // Needs TOTP — get country for anomaly info
-  const country = await getCountry(ip)
-  const previousCountries = db.prepare(`
-    SELECT DISTINCT country FROM login_history
-    WHERE user_id = ? AND success = 1 AND country IS NOT NULL
-    ORDER BY created_at DESC LIMIT 10
-  `).all(user.id).map(r => r.country)
-  const newCountry = country && previousCountries.length > 0 && !previousCountries.includes(country)
-
-  req.session.pendingUserId = user.id
-  req.session.pendingIp = ip
-  req.session.pendingCountry = country
-  req.session.save(() =>
-    res.json({ requires2fa: true, newCountry: newCountry || false, country: country || null })
-  )
 })
 
 // ─── complete login with TOTP ─────────────────────────────────────────────────
 
-router.post('/2fa/verify', (req, res) => {
-  const { code, rememberDevice, deviceLabel } = req.body
-  const pendingUserId = req.session.pendingUserId
+router.post('/2fa/verify', async (req, res) => {
+  try {
+    const { code, rememberDevice, deviceLabel } = req.body
+    const pendingUserId = req.session.pendingUserId
 
-  if (!pendingUserId) return res.status(400).json({ error: 'No pending login' })
-  if (!code) return res.status(400).json({ error: 'Code is required' })
+    if (!pendingUserId) return res.status(400).json({ error: 'No pending login' })
+    if (!code) return res.status(400).json({ error: 'Code is required' })
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(pendingUserId)
-  if (!user?.totp_secret) return res.status(400).json({ error: 'User not found or 2FA not configured' })
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(pendingUserId)
+    if (!user?.totp_secret) return res.status(400).json({ error: 'User not found or 2FA not configured' })
 
-  const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
-  if (!valid) {
-    logLogin(user.id, user.email, req.session.pendingIp, req.session.pendingCountry, false, 'wrong_totp')
-    return res.status(401).json({ error: 'Invalid code. Please try again.' })
+    const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
+    if (!valid) {
+      logLogin(user.id, user.email, req.session.pendingIp, req.session.pendingCountry, false, 'wrong_totp')
+      return res.status(401).json({ error: 'Invalid code. Please try again.' })
+    }
+
+    const ip = req.session.pendingIp
+    const country = req.session.pendingCountry
+
+    if (rememberDevice) {
+      setTrustedDeviceCookie(res, user.id, country, ip, deviceLabel || 'Browser')
+    }
+
+    logLogin(user.id, user.email, ip, country, true)
+    setFullSession(req, user)
+
+    req.session.save((err) => {
+      if (err) return res.status(500).json({ error: 'Session error' })
+      res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1 } })
+    })
+  } catch (err) {
+    console.error('2fa/verify error:', err)
+    res.status(500).json({ error: 'Verification failed: ' + err.message })
   }
-
-  const ip = req.session.pendingIp
-  const country = req.session.pendingCountry
-
-  if (rememberDevice) {
-    setTrustedDeviceCookie(res, user.id, country, ip, deviceLabel || 'Browser')
-  }
-
-  logLogin(user.id, user.email, ip, country, true)
-  setFullSession(req, user)
-
-  req.session.save((err) => {
-    if (err) return res.status(500).json({ error: 'Session error' })
-    res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1 } })
-  })
 })
 
 // ─── TOTP setup (new users, or changing authenticator) ────────────────────────
 
 // Generate a secret + QR code. Requires either a pending setup session or a live session.
 router.get('/2fa/setup-secret', async (req, res) => {
-  const userId = req.session.setupUserId || req.session.userId
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' })
+  try {
+    const userId = req.session.setupUserId || req.session.userId
+    if (!userId) return res.status(401).json({ error: 'Not authenticated' })
 
-  const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(userId)
-  if (!user) return res.status(404).json({ error: 'User not found' })
+    const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(userId)
+    if (!user) return res.status(404).json({ error: 'User not found' })
 
-  const secret = generateSecret()
-  const otpauth = generateURI({ label: user.email, issuer: APP_NAME, secret, type: 'totp' })
-  const qrDataUrl = await QRCode.toDataURL(otpauth)
+    const secret = generateSecret()
+    const otpauth = generateURI({ label: user.email, issuer: APP_NAME, secret, type: 'totp' })
+    const qrDataUrl = await QRCode.toDataURL(otpauth)
 
-  // Store the secret temporarily so we can verify it before enabling
-  db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(secret, userId)
+    db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(secret, userId)
 
-  res.json({ secret, qrDataUrl })
+    res.json({ secret, qrDataUrl })
+  } catch (err) {
+    console.error('2fa/setup-secret error:', err)
+    res.status(500).json({ error: 'Failed to generate 2FA setup: ' + err.message })
+  }
 })
 
 // Verify the first code and enable 2FA, then complete login
-router.post('/2fa/enable', (req, res) => {
-  const { code } = req.body
-  const userId = req.session.setupUserId || req.session.userId
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' })
-  if (!code) return res.status(400).json({ error: 'Code is required' })
+router.post('/2fa/enable', async (req, res) => {
+  try {
+    const { code } = req.body
+    const userId = req.session.setupUserId || req.session.userId
+    if (!userId) return res.status(401).json({ error: 'Not authenticated' })
+    if (!code) return res.status(400).json({ error: 'Code is required' })
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
-  if (!user?.totp_secret) return res.status(400).json({ error: '2FA secret not generated yet' })
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!user?.totp_secret) return res.status(400).json({ error: '2FA secret not generated yet' })
 
-  const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
-  if (!valid) return res.status(401).json({ error: 'Invalid code — make sure your authenticator clock is synced' })
+    const valid = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
+    if (!valid) return res.status(401).json({ error: 'Invalid code — make sure your authenticator clock is synced' })
 
-  db.prepare('UPDATE users SET totp_enabled = 1 WHERE id = ?').run(userId)
+    db.prepare('UPDATE users SET totp_enabled = 1 WHERE id = ?').run(userId)
 
-  // If coming from setup flow, complete login now
-  if (req.session.setupUserId) {
-    const fullUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
-    setFullSession(req, fullUser)
-    logLogin(userId, fullUser.email, getClientIp(req), null, true)
-    return req.session.save((err) => {
-      if (err) return res.status(500).json({ error: 'Session error' })
-      res.json({ success: true, user: { id: fullUser.id, email: fullUser.email, name: fullUser.name, isAdmin: fullUser.is_admin === 1 } })
-    })
+    if (req.session.setupUserId) {
+      const fullUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+      setFullSession(req, fullUser)
+      logLogin(userId, fullUser.email, getClientIp(req), null, true)
+      return req.session.save((err) => {
+        if (err) return res.status(500).json({ error: 'Session error' })
+        res.json({ success: true, user: { id: fullUser.id, email: fullUser.email, name: fullUser.name, isAdmin: fullUser.is_admin === 1 } })
+      })
+    }
+
+    res.json({ success: true, message: '2FA enabled' })
+  } catch (err) {
+    console.error('2fa/enable error:', err)
+    res.status(500).json({ error: 'Failed to enable 2FA: ' + err.message })
   }
-
-  res.json({ success: true, message: '2FA enabled' })
 })
 
 // Disable 2FA — requires current password + valid TOTP
 router.post('/2fa/disable', async (req, res) => {
-  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' })
-  const { password, code } = req.body
-  if (!password || !code) return res.status(400).json({ error: 'Password and code are required' })
+  try {
+    if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' })
+    const { password, code } = req.body
+    if (!password || !code) return res.status(400).json({ error: 'Password and code are required' })
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId)
-  if (!user) return res.status(404).json({ error: 'User not found' })
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId)
+    if (!user) return res.status(404).json({ error: 'User not found' })
 
-  const validPw = await bcrypt.compare(password, user.password_hash)
-  if (!validPw) return res.status(401).json({ error: 'Incorrect password' })
+    const validPw = await bcrypt.compare(password, user.password_hash)
+    if (!validPw) return res.status(401).json({ error: 'Incorrect password' })
 
-  const validCode = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
-  if (!validCode) return res.status(401).json({ error: 'Invalid authenticator code' })
+    const validCode = verifySync({ token: code.replace(/\s/g, ''), secret: user.totp_secret, type: 'totp' })?.valid
+    if (!validCode) return res.status(401).json({ error: 'Invalid authenticator code' })
 
-  db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(user.id)
-  res.json({ success: true, message: '2FA disabled' })
+    db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(user.id)
+    res.json({ success: true, message: '2FA disabled' })
+  } catch (err) {
+    console.error('2fa/disable error:', err)
+    res.status(500).json({ error: 'Failed to disable 2FA: ' + err.message })
+  }
 })
 
 // ─── admin step-up verification ───────────────────────────────────────────────
