@@ -28,6 +28,20 @@ function ResearchDashboard() {
   const [renameValue, setRenameValue] = useState('')
   const [optimizerEtfs, setOptimizerEtfs] = useState(null)
 
+  // Watchlist tab ordering
+  const [watchlistOrder, setWatchlistOrder] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('researchWatchlistOrder')) } catch { return null }
+  })
+  const [dragWatchlistOver, setDragWatchlistOver] = useState(null)
+  const dragWatchlistIdx = useRef(null)
+
+  const orderedWatchlists = watchlistOrder
+    ? [
+        ...watchlistOrder.map(id => watchlists.find(w => w.id === id)).filter(Boolean),
+        ...watchlists.filter(w => !watchlistOrder.includes(w.id))
+      ]
+    : watchlists
+
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -105,7 +119,7 @@ function ResearchDashboard() {
 
       {/* Watchlist tabs */}
       <div className="flex items-center space-x-1 mb-4 border-b border-gray-200 pb-2">
-        {watchlists.map(wl => (
+        {orderedWatchlists.map((wl, i) => (
           <div key={wl.id} className="flex items-center">
             {renamingId === wl.id ? (
               <div className="flex items-center space-x-1">
@@ -122,12 +136,30 @@ function ResearchDashboard() {
               </div>
             ) : (
               <button
+                draggable={true}
+                onDragStart={() => { dragWatchlistIdx.current = i }}
+                onDragOver={(e) => { e.preventDefault(); setDragWatchlistOver(i) }}
+                onDragLeave={() => setDragWatchlistOver(null)}
+                onDrop={() => {
+                  const from = dragWatchlistIdx.current
+                  setDragWatchlistOver(null)
+                  if (from === null || from === i) return
+                  const ids = orderedWatchlists.map(w => w.id)
+                  const [moved] = ids.splice(from, 1)
+                  ids.splice(i, 0, moved)
+                  setWatchlistOrder(ids)
+                  localStorage.setItem('researchWatchlistOrder', JSON.stringify(ids))
+                  dragWatchlistIdx.current = null
+                }}
+                onDragEnd={() => { dragWatchlistIdx.current = null; setDragWatchlistOver(null) }}
                 onClick={() => selectWatchlist(wl)}
                 onDoubleClick={() => startRename(wl)}
-                className={`px-4 py-2 rounded-t-md text-sm font-medium border-b-2 transition-colors ${
+                className={`px-4 py-2 rounded-t-md text-sm font-medium border-b-2 transition-colors cursor-grab active:cursor-grabbing ${
                   activeWatchlist?.id === wl.id
                     ? 'border-blue-600 text-blue-700 bg-blue-50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    : dragWatchlistOver === i
+                      ? 'border-blue-300 text-gray-600 bg-blue-50'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
                 title="Double-click to rename"
               >

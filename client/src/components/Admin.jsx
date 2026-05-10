@@ -16,11 +16,79 @@ function Admin() {
     isAdmin: false
   })
 
+  const [dbStats, setDbStats] = useState(null)
+  const [backupLoading, setBackupLoading] = useState(false)
+  const [backupError, setBackupError] = useState(null)
+
+  const [restoreFile, setRestoreFile] = useState(null)
+  const [restoreConfirm, setRestoreConfirm] = useState(false)
+  const [restoreLoading, setRestoreLoading] = useState(false)
+  const [restoreResult, setRestoreResult] = useState(null)
+  const [restoreError, setRestoreError] = useState(null)
+
   useEffect(() => {
     if (isAdmin) {
       fetchUsers()
+      fetchStats()
     }
   }, [isAdmin])
+
+  const fetchStats = async () => {
+    try {
+      const res = await fetch('/api/backup/stats', { credentials: 'include' })
+      if (res.ok) setDbStats(await res.json())
+    } catch {}
+  }
+
+  const downloadFile = async (url, label) => {
+    setBackupLoading(true)
+    setBackupError(null)
+    try {
+      const res = await fetch(url, { credentials: 'include' })
+      if (!res.ok) throw new Error((await res.json()).error || 'Download failed')
+      const disposition = res.headers.get('Content-Disposition') || ''
+      const match = disposition.match(/filename="([^"]+)"/)
+      const filename = match ? match[1] : label
+      const blob = await res.blob()
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(href)
+    } catch (err) {
+      setBackupError(err.message)
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  const handleRestore = async () => {
+    if (!restoreFile) return
+    setRestoreLoading(true)
+    setRestoreError(null)
+    setRestoreResult(null)
+    try {
+      const text = await restoreFile.text()
+      const backup = JSON.parse(text)
+      const res = await fetch('/api/backup/restore/json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(backup),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Restore failed')
+      setRestoreResult(data.summary)
+      setRestoreFile(null)
+      setRestoreConfirm(false)
+      fetchStats()
+    } catch (err) {
+      setRestoreError(err.message)
+    } finally {
+      setRestoreLoading(false)
+    }
+  }
 
   const fetchUsers = async () => {
     try {
@@ -252,6 +320,137 @@ function Admin() {
         </div>
       )}
 
+      {/* Backup */}
+      <div className="bg-white shadow rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">Data Backup</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Download a backup of all data — options positions, portfolio holdings, transaction history, ETF research, and asset class mappings.
+          Recommended once every 1–2 weeks.
+        </p>
+
+        {dbStats && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            {[
+              ['Options positions', dbStats.positions],
+              ['Portfolio imports', dbStats.portfolio_imports],
+              ['Holdings rows', dbStats.portfolio_positions],
+              ['Transactions', dbStats.portfolio_transaction_history],
+              ['Portfolios', dbStats.portfolios],
+              ['ETF watchlists', dbStats.etf_watchlists],
+              ['ETF imports', dbStats.etf_research_imports],
+              ['ETF rows', dbStats.etf_research_data],
+            ].map(([label, count]) => (
+              <div key={label} className="bg-gray-50 rounded-md px-3 py-2">
+                <div className="text-xs text-gray-500">{label}</div>
+                <div className="text-lg font-semibold text-gray-800">{count.toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {backupError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+            {backupError}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => downloadFile('/api/backup/export/full', 'tracker-backup.json')}
+            disabled={backupLoading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+          >
+            {backupLoading ? 'Preparing…' : 'Export Full JSON'}
+          </button>
+          <button
+            onClick={() => downloadFile('/api/backup/download/database', 'tracker-backup.db')}
+            disabled={backupLoading}
+            className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800 disabled:opacity-50 text-sm font-medium"
+          >
+            {backupLoading ? 'Preparing…' : 'Download .db File'}
+          </button>
+          <span className="text-xs text-gray-400">
+            {dbStats ? `Schema v${dbStats.schema_version}` : ''}
+          </span>
+        </div>
+
+        {/* Restore */}
+        <div className="mt-6 pt-6 border-t border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-800 mb-1">Restore from JSON Backup</h3>
+          <p className="text-sm text-gray-500 mb-3">
+            Uploads a <code className="bg-gray-100 px-1 rounded text-xs">tracker-backup-*.json</code> file and
+            replaces all current data. Your login accounts are matched by email and preserved.
+            <strong className="text-red-600"> This cannot be undone — download a fresh backup first if you have any current data to keep.</strong>
+          </p>
+
+          {restoreResult && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-green-800 text-sm">
+              ✓ Restore complete —{' '}
+              {restoreResult.positions} positions, {restoreResult.portfolios} portfolios,{' '}
+              {restoreResult.portfolio_positions.toLocaleString()} holdings rows,{' '}
+              {restoreResult.portfolio_transaction_history.toLocaleString()} transactions,{' '}
+              {restoreResult.etf_research_data.toLocaleString()} ETF rows restored.
+            </div>
+          )}
+
+          {restoreError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+              Error: {restoreError}
+            </div>
+          )}
+
+          {!restoreConfirm ? (
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={e => {
+                    setRestoreFile(e.target.files[0] || null)
+                    setRestoreError(null)
+                    setRestoreResult(null)
+                    e.target.value = ''
+                  }}
+                />
+                Choose JSON file
+              </label>
+              {restoreFile && (
+                <>
+                  <span className="text-sm text-gray-600">{restoreFile.name}</span>
+                  <button
+                    onClick={() => setRestoreConfirm(true)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                  >
+                    Restore…
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-md">
+              <span className="text-sm text-red-700 font-medium">
+                Replace ALL current data with <strong>{restoreFile.name}</strong>?
+              </span>
+              <button
+                onClick={handleRestore}
+                disabled={restoreLoading}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+              >
+                {restoreLoading ? 'Restoring…' : 'Yes, restore now'}
+              </button>
+              <button
+                onClick={() => { setRestoreConfirm(false); setRestoreFile(null) }}
+                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Users */}
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">

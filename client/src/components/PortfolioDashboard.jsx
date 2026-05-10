@@ -6,6 +6,12 @@ import PortfolioByAccount from './PortfolioByAccount'
 import AssetClassMapEditor from './AssetClassMapEditor'
 import PortfolioResearchView from './PortfolioResearchView'
 
+const DEFAULT_SUB_TABS = [
+  { id: 'overview', label: 'By Asset Class' },
+  { id: 'by-account', label: 'By Account' },
+  { id: 'analysis', label: 'Analysis' },
+]
+
 export default function PortfolioDashboard() {
   const {
     portfolios, loading: portfoliosLoading,
@@ -71,6 +77,18 @@ export default function PortfolioDashboard() {
   const [livePrices, setLivePrices] = useState(null) // { symbol: price } or null when hidden
   const [livePricesLoading, setLivePricesLoading] = useState(false)
   const [livePricesError, setLivePricesError] = useState(null)
+
+  // Tab ordering — persisted to localStorage
+  const [portfolioOrder, setPortfolioOrder] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('portfolioTabOrder')) } catch { return null }
+  })
+  const [subTabOrder, setSubTabOrder] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('portfolioSubTabOrder')) || DEFAULT_SUB_TABS.map(t => t.id) } catch { return DEFAULT_SUB_TABS.map(t => t.id) }
+  })
+  const [dragPortfolioOver, setDragPortfolioOver] = useState(null)
+  const [dragSubTabOver, setDragSubTabOver] = useState(null)
+  const dragPortfolioIdx = useRef(null)
+  const dragSubTabIdx = useRef(null)
 
 
   // Select first portfolio on initial load
@@ -410,6 +428,18 @@ export default function PortfolioDashboard() {
 
   const activePortfolio = portfolios.find(p => p.id === activePortfolioId)
 
+  const orderedPortfolios = portfolioOrder
+    ? [
+        ...portfolioOrder.map(id => portfolios.find(p => p.id === id)).filter(Boolean),
+        ...portfolios.filter(p => !portfolioOrder.includes(p.id))
+      ]
+    : portfolios
+
+  const orderedSubTabs = [
+    ...subTabOrder.map(id => DEFAULT_SUB_TABS.find(t => t.id === id)).filter(Boolean),
+    ...DEFAULT_SUB_TABS.filter(t => !subTabOrder.includes(t.id))
+  ]
+
   if (portfoliosLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -422,8 +452,27 @@ export default function PortfolioDashboard() {
     <div>
       {/* Portfolio tab bar */}
       <div className="flex items-center gap-0.5 border-b border-gray-200 mb-6 overflow-x-auto">
-        {portfolios.map(p => (
-          <div key={p.id} className="flex-shrink-0">
+        {orderedPortfolios.map((p, i) => (
+          <div
+            key={p.id}
+            className={`flex-shrink-0 rounded-t transition-colors ${dragPortfolioOver === i ? 'bg-blue-50' : ''}`}
+            draggable={renamingId !== p.id}
+            onDragStart={() => { dragPortfolioIdx.current = i }}
+            onDragOver={(e) => { e.preventDefault(); setDragPortfolioOver(i) }}
+            onDragLeave={() => setDragPortfolioOver(null)}
+            onDrop={() => {
+              const from = dragPortfolioIdx.current
+              setDragPortfolioOver(null)
+              if (from === null || from === i) return
+              const ids = orderedPortfolios.map(q => q.id)
+              const [moved] = ids.splice(from, 1)
+              ids.splice(i, 0, moved)
+              setPortfolioOrder(ids)
+              localStorage.setItem('portfolioTabOrder', JSON.stringify(ids))
+              dragPortfolioIdx.current = null
+            }}
+            onDragEnd={() => { dragPortfolioIdx.current = null; setDragPortfolioOver(null) }}
+          >
             {renamingId === p.id ? (
               <form onSubmit={handleRename} className="flex items-center gap-1 px-2 py-1">
                 <input
@@ -438,7 +487,7 @@ export default function PortfolioDashboard() {
             ) : (
               <button
                 onClick={() => switchPortfolio(p.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors cursor-grab active:cursor-grabbing ${
                   activePortfolioId === p.id
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
@@ -510,20 +559,34 @@ export default function PortfolioDashboard() {
         <>
           {/* Sub-navigation */}
           <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-0">
-            {/* View tabs — left side */}
+            {/* View tabs — draggable, left side */}
             <div className="flex items-center gap-6">
-              {[
-                { id: 'overview', label: 'By Asset Class' },
-                { id: 'by-account', label: 'By Account' },
-                { id: 'analysis', label: 'Analysis' },
-              ].map(tab => (
+              {orderedSubTabs.map((tab, i) => (
                 <button
                   key={tab.id}
+                  draggable={true}
+                  onDragStart={() => { dragSubTabIdx.current = i }}
+                  onDragOver={(e) => { e.preventDefault(); setDragSubTabOver(i) }}
+                  onDragLeave={() => setDragSubTabOver(null)}
+                  onDrop={() => {
+                    const from = dragSubTabIdx.current
+                    setDragSubTabOver(null)
+                    if (from === null || from === i) return
+                    const ids = orderedSubTabs.map(t => t.id)
+                    const [moved] = ids.splice(from, 1)
+                    ids.splice(i, 0, moved)
+                    setSubTabOrder(ids)
+                    localStorage.setItem('portfolioSubTabOrder', JSON.stringify(ids))
+                    dragSubTabIdx.current = null
+                  }}
+                  onDragEnd={() => { dragSubTabIdx.current = null; setDragSubTabOver(null) }}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`text-sm font-medium pb-3 border-b-2 -mb-px transition-colors ${
+                  className={`text-sm font-medium pb-3 border-b-2 -mb-px transition-colors cursor-grab active:cursor-grabbing ${
                     activeTab === tab.id
                       ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                      : dragSubTabOver === i
+                        ? 'border-blue-300 text-gray-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
                   }`}
                 >
                   {tab.label}
@@ -550,20 +613,20 @@ export default function PortfolioDashboard() {
               </button>
               <button
                 onClick={() => setActiveTab('history')}
-                className={`px-3 py-1 text-sm rounded border transition-colors ${
+                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'history'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    ? 'bg-green-700 text-white'
+                    : 'bg-green-600 text-white hover:bg-green-700'
                 }`}
               >
                 History
               </button>
               <button
                 onClick={() => setActiveTab('import')}
-                className={`px-3 py-1 text-sm rounded border transition-colors ${
+                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'import'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    ? 'bg-blue-700 text-white'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
                 }`}
               >
                 Import

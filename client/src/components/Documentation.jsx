@@ -86,6 +86,67 @@ function Documentation() {
           </div>
         </AccordionSection>
 
+        <AccordionSection id="backup" title="Data Backup & Recovery" icon="🔒">
+          <div className="prose prose-sm max-w-none space-y-4 text-gray-700">
+            <p>
+              All your data — options positions, portfolio holdings, transaction history, ETF research, and asset class mappings — lives in a SQLite database on Railway's persistent volume. The Backup section in the <strong>Admin</strong> tab lets you download a copy and restore it if anything goes wrong.
+            </p>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Weekly Backup Routine (recommended)</div>
+              <ol className="text-sm text-gray-700 space-y-1 list-decimal ml-4">
+                <li>Go to <strong>Admin → Data Backup</strong></li>
+                <li>Click <strong>Export Full JSON</strong> — saves a <code className="bg-gray-100 px-1 rounded text-xs">tracker-backup-YYYY-MM-DD.json</code> file to your Downloads</li>
+                <li>Move it to a safe folder (e.g. iCloud, Google Drive, or an external drive)</li>
+                <li>Keep the last 2–4 backups in case a recent one is corrupt</li>
+              </ol>
+              <p className="text-sm text-gray-600 mt-2">
+                <strong>Download .db File</strong> saves the raw SQLite database — useful as a "gold standard" archive you can open in any SQLite browser (e.g. <em>DB Browser for SQLite</em>) to inspect your data directly.
+              </p>
+            </div>
+
+            <div className="bg-red-50 rounded-md p-4 border border-red-200">
+              <div className="font-semibold text-red-900 mb-2">🚨 Disaster Recovery — Full Database Loss</div>
+              <p className="text-sm text-gray-700 mb-3">
+                Use this procedure if Railway loses the database, or if you need to wipe and start fresh (e.g. ransomware). You'll need your most recent JSON backup file.
+              </p>
+              <ol className="text-sm text-gray-700 space-y-2 list-decimal ml-4">
+                <li>
+                  <strong>Log in to Railway</strong> and verify the app is running. If the database was completely wiped, the app will auto-create a fresh empty database on startup.
+                </li>
+                <li>
+                  <strong>Create your admin account</strong> — if you're starting from scratch, use the app's first-run flow or the Railway console to create a new account with your usual email address. <em>The email address must match what was in your backup.</em>
+                </li>
+                <li>
+                  <strong>Go to Admin → Data Backup → Restore from JSON Backup</strong>
+                </li>
+                <li>
+                  Click <strong>Choose JSON file</strong> and select your most recent <code className="bg-gray-100 px-1 rounded text-xs">tracker-backup-*.json</code>
+                </li>
+                <li>
+                  Click <strong>Restore…</strong> then confirm with <strong>Yes, restore now</strong>
+                </li>
+                <li>
+                  The app will match your account by email, remap all data to your new user ID automatically, and re-insert everything. A summary shows how many rows were restored.
+                </li>
+                <li>
+                  Refresh the app — all portfolios, positions, history, and ETF data will be back exactly as they were.
+                </li>
+              </ol>
+            </div>
+
+            <div className="bg-yellow-50 rounded-md p-4 border border-yellow-200">
+              <div className="font-semibold text-yellow-900 mb-1">⚠️ Important notes</div>
+              <ul className="text-sm text-gray-700 space-y-1">
+                <li>• <strong>Restore is destructive</strong> — it wipes all current data before importing. Download a fresh backup first if you have any data you want to keep.</li>
+                <li>• <strong>Email must match</strong> — your account email at restore time must match the email stored in the backup. If you change your email, update it before backing up.</li>
+                <li>• <strong>User accounts are not wiped</strong> — existing login accounts are preserved and matched by email. Only positions, portfolios, history, and research data are replaced.</li>
+                <li>• <strong>JSON only for restore</strong> — the <code className="bg-gray-100 px-1 rounded text-xs">.db</code> file is for archiving and inspection, not for in-app restore.</li>
+              </ul>
+            </div>
+          </div>
+        </AccordionSection>
+
       </div>
 
       {/* Portfolio Tracker */}

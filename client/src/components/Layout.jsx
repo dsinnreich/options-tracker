@@ -62,18 +62,7 @@ function Layout() {
 
             {/* Right: section-specific actions + user */}
             <div className="flex items-center space-x-4">
-              {inOptions && (
-                <Link
-                  to="/"
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    location.pathname === '/'
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                  }`}
-                >
-                  Dashboard
-                </Link>
-              )}
+
               <Link
                 to="/help"
                 className={`px-3 py-2 rounded-md text-sm font-medium ${
