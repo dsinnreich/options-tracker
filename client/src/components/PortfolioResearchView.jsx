@@ -179,7 +179,7 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
       const val = research?.[col.key]
       return (
         <td key={col.key}
-            className={`px-2 py-1 text-right whitespace-nowrap text-xs ${bold ? 'font-semibold' : ''} ${val != null ? researchColor(col, val) : 'text-gray-300'}`}>
+            className={`px-3 py-1 text-right whitespace-nowrap text-sm ${bold ? 'font-semibold' : ''} ${val != null ? researchColor(col, val) : 'text-gray-300'}`}>
           {val != null ? col.fmt(val) : '—'}
         </td>
       )
@@ -193,7 +193,7 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
   return (
     <div>
       {/* Status bar */}
-      <div className="flex items-center gap-3 mb-4 text-xs text-gray-400">
+      <div className="flex items-center gap-3 mb-4 text-sm text-gray-400">
         {researchData.length > 0
           ? <>Research data from watchlist: <span className="font-medium text-gray-600">{researchWatchlist?.name ?? '—'}</span> · {researchData.length} ETFs</>
           : <span className="text-amber-600">No research data available — import a Morningstar XLSX in the ETF Research tab to populate stats.</span>
@@ -201,18 +201,18 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="text-xs" style={{ borderCollapse: 'collapse', tableLayout: 'auto' }}>
+        <table className="text-sm w-full" style={{ borderCollapse: 'collapse', tableLayout: 'auto' }}>
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-2 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 120 }}>Asset Class</th>
-              <th className="px-2 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 100 }}>Style</th>
-              <th className="px-2 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide" style={{ minWidth: 200 }}>Name</th>
-              <th className="px-2 py-2 text-right font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 72 }}>Current %</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 140 }}>Asset Class</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 120 }}>Style</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wide" style={{ minWidth: 240 }}>Name</th>
+              <th className="px-3 py-2.5 text-right font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 90 }}>Current %</th>
               {RESEARCH_COLS.map(col => (
-                <th key={col.key} className="px-2 py-2 text-right font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 64 }}>
+                <th key={col.key} className="px-3 py-2.5 text-right font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" style={{ minWidth: 76 }}>
                   <div className="leading-tight">
                     <div>{col.label}</div>
-                    <div className="text-[10px] font-normal text-gray-400">{col.sub}</div>
+                    <div className="text-xs font-normal text-gray-400">{col.sub}</div>
                   </div>
                 </th>
               ))}
@@ -228,15 +228,15 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
                 return (
                   <tr key={`h|${acRow.asset_class}|${sRow.style}|${hRow.symbol}`}
                       className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-2 py-0.5 text-gray-300">└</td>
-                    <td className="px-2 py-0.5 text-gray-300">└</td>
-                    <td className="px-2 py-0.5">
+                    <td className="px-3 py-1 text-gray-300">└</td>
+                    <td className="px-3 py-1 text-gray-300">└</td>
+                    <td className="px-3 py-1">
                       <span className="font-medium text-gray-900">{hRow.symbol}</span>
                       {hRow.description && (
-                        <span className="ml-1.5 text-gray-400 truncate" title={hRow.description}> {hRow.description}</span>
+                        <span className="ml-2 text-gray-400 truncate" title={hRow.description}> {hRow.description}</span>
                       )}
                     </td>
-                    <td className="px-2 py-0.5 text-right text-gray-500">
+                    <td className="px-3 py-1 text-right text-gray-500">
                       {fmtPct(grandTotal > 0 ? (hRow.current_value / grandTotal) * 100 : 0)}
                     </td>
                     {renderResearchCells(r)}
@@ -251,10 +251,10 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
                   <tr key={`s|${acRow.asset_class}|${sRow.style}`}
                       className="border-b border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100"
                       onClick={() => toggleStyle(acRow.asset_class, sRow.style)}>
-                    <td className="px-2 py-1 text-gray-400">{styleExpanded ? '▼' : '▶'}</td>
-                    <td className="px-2 py-1 font-semibold text-gray-800 whitespace-nowrap">{sRow.style} Total</td>
-                    <td className="px-2 py-1"></td>
-                    <td className="px-2 py-1 text-right font-semibold text-gray-700">
+                    <td className="px-3 py-1.5 text-gray-400">{styleExpanded ? '▼' : '▶'}</td>
+                    <td className="px-3 py-1.5 font-semibold text-gray-800 whitespace-nowrap">{sRow.style} Total</td>
+                    <td className="px-3 py-1.5"></td>
+                    <td className="px-3 py-1.5 text-right font-semibold text-gray-700">
                       {fmtPct(grandTotal > 0 ? (sRow.current_value / grandTotal) * 100 : 0)}
                     </td>
                     {renderResearchCells(styleResearch, true)}
@@ -269,12 +269,12 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
                   <tr key={`ac|${acRow.asset_class}`}
                       className="border-b-2 border-gray-300 bg-amber-50 cursor-pointer hover:bg-amber-100"
                       onClick={() => toggleAC(acRow.asset_class)}>
-                    <td className="px-2 py-1.5 font-bold text-gray-900 whitespace-nowrap" colSpan={2}>
-                      <span className="mr-1 text-gray-500 text-xs">{acExpanded ? '▼' : '▶'}</span>
+                    <td className="px-3 py-2 font-bold text-gray-900 whitespace-nowrap" colSpan={2}>
+                      <span className="mr-1 text-gray-500 text-sm">{acExpanded ? '▼' : '▶'}</span>
                       {acRow.asset_class} Total
                     </td>
-                    <td className="px-2 py-1.5"></td>
-                    <td className="px-2 py-1.5 text-right font-bold text-gray-800">
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2 text-right font-bold text-gray-800">
                       {fmtPct(grandTotal > 0 ? (acRow.current_value / grandTotal) * 100 : 0)}
                     </td>
                     {renderResearchCells(acResearch, true)}
@@ -285,8 +285,8 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
               // --- Grand total row ---
               return (
                 <tr key="grand-total" className="bg-gray-100 border-t-2 border-gray-400">
-                  <td className="px-2 py-2 font-bold text-gray-900" colSpan={3}>Grand Total</td>
-                  <td className="px-2 py-2 text-right font-bold text-gray-800">100.00%</td>
+                  <td className="px-3 py-2.5 font-bold text-gray-900" colSpan={3}>Grand Total</td>
+                  <td className="px-3 py-2.5 text-right font-bold text-gray-800">100.00%</td>
                   {renderResearchCells(row.grandResearch, true)}
                 </tr>
               )
@@ -295,7 +295,7 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
         </table>
       </div>
 
-      <p className="text-xs text-gray-400 mt-2">
+      <p className="text-sm text-gray-400 mt-2">
         Stats from Morningstar. Std Dev, Sharpe, Alpha are 3Y monthly. Aggregate rows show value-weighted averages.
       </p>
     </div>
