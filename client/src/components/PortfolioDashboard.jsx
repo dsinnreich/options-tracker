@@ -32,16 +32,6 @@ export default function PortfolioDashboard() {
     selectWatchlist: selectResearchWatchlist
   } = useResearch()
 
-  // Persist selected research watchlist per portfolio
-  const handleSelectResearchWatchlist = useCallback((wl) => {
-    selectResearchWatchlist(wl)
-    if (activePortfolioId) {
-      const saved = JSON.parse(localStorage.getItem('portfolioAnalysisWatchlist') || '{}')
-      saved[activePortfolioId] = wl.id
-      localStorage.setItem('portfolioAnalysisWatchlist', JSON.stringify(saved))
-    }
-  }, [selectResearchWatchlist, activePortfolioId])
-
   const [activePortfolioId, setActivePortfolioId] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [imports, setImports] = useState([])
@@ -100,6 +90,15 @@ export default function PortfolioDashboard() {
   const dragPortfolioIdx = useRef(null)
   const dragSubTabIdx = useRef(null)
 
+  // Persist selected research watchlist per portfolio
+  const handleSelectResearchWatchlist = useCallback((wl) => {
+    selectResearchWatchlist(wl)
+    if (activePortfolioId) {
+      const saved = JSON.parse(localStorage.getItem('portfolioAnalysisWatchlist') || '{}')
+      saved[activePortfolioId] = wl.id
+      localStorage.setItem('portfolioAnalysisWatchlist', JSON.stringify(saved))
+    }
+  }, [selectResearchWatchlist, activePortfolioId])
 
   // Select first portfolio (in custom order) on initial load
   useEffect(() => {
