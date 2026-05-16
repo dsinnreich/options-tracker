@@ -32,6 +32,16 @@ export default function PortfolioDashboard() {
     selectWatchlist: selectResearchWatchlist
   } = useResearch()
 
+  // Persist selected research watchlist per portfolio
+  const handleSelectResearchWatchlist = useCallback((wl) => {
+    selectResearchWatchlist(wl)
+    if (activePortfolioId) {
+      const saved = JSON.parse(localStorage.getItem('portfolioAnalysisWatchlist') || '{}')
+      saved[activePortfolioId] = wl.id
+      localStorage.setItem('portfolioAnalysisWatchlist', JSON.stringify(saved))
+    }
+  }, [selectResearchWatchlist, activePortfolioId])
+
   const [activePortfolioId, setActivePortfolioId] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [imports, setImports] = useState([])
@@ -91,12 +101,27 @@ export default function PortfolioDashboard() {
   const dragSubTabIdx = useRef(null)
 
 
-  // Select first portfolio on initial load
+  // Select first portfolio (in custom order) on initial load
   useEffect(() => {
     if (portfolios.length > 0 && !activePortfolioId) {
-      setActivePortfolioId(portfolios[0].id)
+      const ordered = portfolioOrder
+        ? [
+            ...portfolioOrder.map(id => portfolios.find(p => p.id === id)).filter(Boolean),
+            ...portfolios.filter(p => !portfolioOrder.includes(p.id))
+          ]
+        : portfolios
+      setActivePortfolioId(ordered[0].id)
     }
-  }, [portfolios, activePortfolioId])
+  }, [portfolios, activePortfolioId, portfolioOrder])
+
+  // Restore saved research watchlist when portfolio changes or watchlists load
+  useEffect(() => {
+    if (!activePortfolioId || researchWatchlists.length === 0) return
+    const saved = JSON.parse(localStorage.getItem('portfolioAnalysisWatchlist') || '{}')
+    const savedId = saved[activePortfolioId]
+    const match = savedId && researchWatchlists.find(w => w.id === savedId)
+    if (match) selectResearchWatchlist(match)
+  }, [activePortfolioId, researchWatchlists, selectResearchWatchlist])
 
   // Load all data for active portfolio
   const loadPortfolioData = useCallback(async (portfolioId) => {
@@ -759,7 +784,7 @@ export default function PortfolioDashboard() {
                       value={researchWatchlist?.id || ''}
                       onChange={e => {
                         const wl = researchWatchlists.find(w => w.id === Number(e.target.value))
-                        if (wl) selectResearchWatchlist(wl)
+                        if (wl) handleSelectResearchWatchlist(wl)
                       }}
                       className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
                     >

@@ -402,7 +402,7 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
                     <td style={w('target_pct')}    className={`${px} py-1 text-right font-semibold text-gray-700`}
                         onClick={e => e.stopPropagation()}>
                       {whatIfMode ? (
-                        <input type="number" step="0.1" min="0" max="100"
+                        <input type="number" step="1" min="0" max="100"
                           value={editTargets[key] ?? ''}
                           onChange={e => setEditTargets(prev => ({ ...prev, [key]: e.target.value }))}
                           className="w-14 text-right border rounded px-1 py-0 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
