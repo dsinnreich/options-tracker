@@ -81,25 +81,46 @@ router.delete('/users/:id', requireAdmin, requireAdminVerified, (req, res) => {
   try {
     const userId = parseInt(req.params.id)
 
-    // Don't allow admin to delete themselves
     if (userId === req.session.userId) {
       return res.status(400).json({ error: 'Cannot delete your own account' })
     }
 
-    // Check if user exists
     const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId)
+    if (!user) return res.status(404).json({ error: 'User not found' })
 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' })
-    }
+    // Delete all user data in dependency order (SQLite FKs not enforced by default)
+    const deleteAll = db.transaction(() => {
+      // Portfolio data
+      const portfolioIds = db.prepare('SELECT id FROM portfolios WHERE user_id = ?').all(userId).map(p => p.id)
+      for (const pid of portfolioIds) {
+        const importIds = db.prepare('SELECT id FROM portfolio_imports WHERE portfolio_id = ?').all(pid).map(i => i.id)
+        for (const iid of importIds) {
+          db.prepare('DELETE FROM portfolio_positions WHERE import_id = ?').run(iid)
+        }
+        db.prepare('DELETE FROM portfolio_imports WHERE portfolio_id = ?').run(pid)
+        db.prepare('DELETE FROM portfolio_targets WHERE portfolio_id = ?').run(pid)
+        db.prepare('DELETE FROM portfolio_transaction_history WHERE portfolio_id = ?').run(pid)
+      }
+      db.prepare('DELETE FROM portfolios WHERE user_id = ?').run(userId)
 
-    // Delete user's positions first
-    db.prepare('DELETE FROM positions WHERE user_id = ?').run(userId)
+      // ETF research data
+      const watchlistIds = db.prepare('SELECT id FROM etf_watchlists WHERE user_id = ?').all(userId).map(w => w.id)
+      for (const wid of watchlistIds) {
+        const importIds = db.prepare('SELECT id FROM etf_research_imports WHERE watchlist_id = ?').all(wid).map(i => i.id)
+        for (const iid of importIds) {
+          db.prepare('DELETE FROM etf_research_data WHERE import_id = ?').run(iid)
+        }
+        db.prepare('DELETE FROM etf_research_imports WHERE watchlist_id = ?').run(wid)
+      }
+      db.prepare('DELETE FROM etf_watchlists WHERE user_id = ?').run(userId)
 
-    // Delete user
-    db.prepare('DELETE FROM users WHERE id = ?').run(userId)
+      db.prepare('DELETE FROM asset_class_map WHERE user_id = ?').run(userId)
+      db.prepare('DELETE FROM positions WHERE user_id = ?').run(userId)
+      db.prepare('DELETE FROM users WHERE id = ?').run(userId)
+    })
 
-    res.json({ success: true, message: 'User deleted successfully' })
+    deleteAll()
+    res.json({ success: true })
   } catch (error) {
     console.error('Delete user error:', error)
     res.status(500).json({ error: 'Failed to delete user' })

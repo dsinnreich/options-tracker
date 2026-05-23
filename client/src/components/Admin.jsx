@@ -72,6 +72,9 @@ function Admin() {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [showEditForm, setShowEditForm] = useState(null)
   const [formData, setFormData] = useState({ email: '', name: '', password: '', isAdmin: false })
+  const [deleteTarget, setDeleteTarget] = useState(null) // { id, name }
+  const [deleteText, setDeleteText] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   // Backup
   const [dbStats, setDbStats] = useState(null)
@@ -245,20 +248,30 @@ function Admin() {
     }
   }
 
-  const handleDeleteUser = async (userId) => {
-    if (!confirm('Are you sure you want to delete this user? All their positions will also be deleted.')) return
+  const handleDeleteUser = async () => {
+    if (!deleteTarget || deleteText !== 'DELETE') return
+    setDeleteLoading(true)
     setError(null)
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
+      const response = await fetch(`/api/admin/users/${deleteTarget.id}`, {
         method: 'DELETE',
         credentials: 'include'
       })
       const data = await response.json()
+      if (response.status === 403 && data.error === 'admin_verify_required') {
+        setNeedsVerification(true)
+        setDeleteTarget(null)
+        setDeleteLoading(false)
+        return
+      }
       if (!response.ok) throw new Error(data.error || 'Failed to delete user')
+      setDeleteTarget(null)
+      setDeleteText('')
       fetchUsers()
     } catch (err) {
       setError(err.message)
     }
+    setDeleteLoading(false)
   }
 
   const startEditUser = (user) => {
@@ -279,6 +292,45 @@ function Admin() {
   return (
     <>
       {needsVerification && <AdminVerifyModal onVerified={onAdminVerified} />}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900">Delete user</h2>
+            <p className="text-sm text-gray-600">
+              This will permanently delete <strong>{deleteTarget.name}</strong> and all their data —
+              positions, portfolios, ETF research, and transaction history. This cannot be undone.
+            </p>
+            <p className="text-sm text-gray-700">
+              Type <span className="font-mono font-bold text-red-600">DELETE</span> to confirm:
+            </p>
+            <input
+              type="text"
+              autoFocus
+              value={deleteText}
+              onChange={e => setDeleteText(e.target.value)}
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-red-500 focus:border-red-500"
+              placeholder="DELETE"
+            />
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteUser}
+                disabled={deleteText !== 'DELETE' || deleteLoading}
+                className="flex-1 py-2 px-4 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleteLoading ? 'Deleting…' : 'Delete user'}
+              </button>
+              <button
+                onClick={() => { setDeleteTarget(null); setDeleteText('') }}
+                className="flex-1 py-2 px-4 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-6">
         <div className="flex justify-between items-center">
@@ -609,7 +661,7 @@ function Admin() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
                       <button onClick={() => startEditUser(user)} className="text-blue-600 hover:text-blue-900">Edit</button>
-                      <button onClick={() => handleDeleteUser(user.id)} className="text-red-600 hover:text-red-900">Delete</button>
+                      <button onClick={() => { setDeleteTarget({ id: user.id, name: user.name }); setDeleteText('') }} className="text-red-600 hover:text-red-900">Delete</button>
                     </td>
                   </tr>
                 ))}
