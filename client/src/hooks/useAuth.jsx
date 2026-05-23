@@ -45,6 +45,7 @@ export function AuthProvider({ children }) {
         throw new Error(data.error || 'Login failed')
       }
 
+      if (data.requiresPasswordChange) return { requiresPasswordChange: true }
       if (data.requires2fa) return { requires2fa: true }
       if (data.requiresTotpSetup) return { requiresTotpSetup: true }
 
