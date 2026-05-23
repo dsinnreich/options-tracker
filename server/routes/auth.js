@@ -181,7 +181,13 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
-    // Password correct. Does user need to set up 2FA first?
+    // Password correct. Must user choose a new password first?
+    if (user.must_change_password) {
+      req.session.pendingPasswordChangeId = user.id
+      return req.session.save(() => res.json({ requiresPasswordChange: true }))
+    }
+
+    // Does user need to set up 2FA first?
     if (!user.totp_enabled) {
       req.session.setupUserId = user.id
       return req.session.save(() => res.json({ requiresTotpSetup: true }))
@@ -217,6 +223,41 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error('login error:', err)
     res.status(500).json({ error: 'Login failed: ' + err.message })
+  }
+})
+
+// ─── first-time password change ───────────────────────────────────────────────
+
+router.post('/set-password', async (req, res) => {
+  try {
+    const userId = req.session.pendingPasswordChangeId
+    if (!userId) return res.status(400).json({ error: 'No pending password change' })
+
+    const { newPassword } = req.body
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' })
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10)
+    db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(passwordHash, userId)
+    delete req.session.pendingPasswordChangeId
+
+    // Now check if TOTP setup is needed
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!user.totp_enabled) {
+      req.session.setupUserId = user.id
+      return req.session.save(() => res.json({ requiresTotpSetup: true }))
+    }
+
+    // Fully authenticated
+    setFullSession(req, user)
+    req.session.save((err) => {
+      if (err) return res.status(500).json({ error: 'Session error' })
+      res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1 } })
+    })
+  } catch (err) {
+    console.error('set-password error:', err)
+    res.status(500).json({ error: 'Failed to set password: ' + err.message })
   }
 })
 

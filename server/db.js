@@ -401,6 +401,17 @@ const migrations = [
       console.log('✅ Migrated to version 9: Added TOTP 2FA, trusted_devices, login_history')
     }
   },
+  {
+    version: 10,
+    up(db) {
+      try {
+        db.exec(`ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0`)
+      } catch (err) {
+        if (!err.message.includes('duplicate column name')) throw err
+      }
+      console.log('✅ Migrated to version 10: Added must_change_password to users')
+    }
+  },
 ]
 
 // Run pending migrations

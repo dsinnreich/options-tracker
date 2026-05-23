@@ -55,10 +55,10 @@ router.post('/users', requireAdmin, requireAdminVerified, async (req, res) => {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 10)
 
-    // Create user
+    // Create user — flag to force password change on first login
     const result = db.prepare(`
-      INSERT INTO users (email, password_hash, name, is_admin)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO users (email, password_hash, name, is_admin, must_change_password)
+      VALUES (?, ?, ?, ?, 1)
     `).run(email, passwordHash, name, isAdmin ? 1 : 0)
 
     res.json({

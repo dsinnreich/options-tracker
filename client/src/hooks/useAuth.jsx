@@ -56,6 +56,25 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  // First-time login: set own password, then proceeds to TOTP setup or full login
+  const setInitialPassword = useCallback(async (newPassword) => {
+    try {
+      const response = await fetch('/api/auth/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ newPassword })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to set password')
+      if (data.requiresTotpSetup) return { requiresTotpSetup: true }
+      setUser(data.user)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  }, [])
+
   // Complete login with TOTP code; optionally remember device for 30 days
   const submitTotp = useCallback(async (code, rememberDevice = false) => {
     try {
@@ -265,6 +284,7 @@ export function AuthProvider({ children }) {
     changePassword,
     forgotPassword,
     resetPassword,
+    setInitialPassword,
     submitTotp,
     getSetupSecret,
     enableTotp,

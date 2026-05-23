@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate, useLocation } from 'react-router-dom'
 
-// step: 'credentials' | 'totp' | 'setup' | 'forgot'
+// step: 'credentials' | 'changepass' | 'totp' | 'setup' | 'forgot'
 function Login() {
   const [step, setStep] = useState('credentials')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('')
   const [totpCode, setTotpCode] = useState('')
   const [rememberDevice, setRememberDevice] = useState(false)
   const [setupQr, setSetupQr] = useState(null)
@@ -17,11 +19,22 @@ function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const { login, submitTotp, getSetupSecret, enableTotp, forgotPassword } = useAuth()
+  const { login, setInitialPassword, submitTotp, getSetupSecret, enableTotp, forgotPassword } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
   const from = location.state?.from?.pathname || '/'
+
+  const goToSetup = async () => {
+    const secret = await getSetupSecret()
+    if (secret.success) {
+      setSetupQr(secret.qrDataUrl)
+      setSetupSecret(secret.secret)
+      setStep('setup')
+    } else {
+      setError(secret.error || 'Failed to load 2FA setup')
+    }
+  }
 
   const handleCredentials = async (e) => {
     e.preventDefault()
@@ -32,20 +45,36 @@ function Login() {
 
     if (result.success) {
       navigate(from, { replace: true })
+    } else if (result.requiresPasswordChange) {
+      setStep('changepass')
     } else if (result.requires2fa) {
       setStep('totp')
     } else if (result.requiresTotpSetup) {
-      // Kick off setup immediately — fetch QR
-      const secret = await getSetupSecret()
-      if (secret.success) {
-        setSetupQr(secret.qrDataUrl)
-        setSetupSecret(secret.secret)
-        setStep('setup')
-      } else {
-        setError(secret.error || 'Failed to load 2FA setup')
-      }
+      await goToSetup()
     } else {
       setError(result.error || 'Login failed')
+    }
+
+    setLoading(false)
+  }
+
+  const handleChangePass = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (newPassword !== newPasswordConfirm) {
+      setError('Passwords do not match')
+      return
+    }
+    setLoading(true)
+
+    const result = await setInitialPassword(newPassword)
+
+    if (result.success) {
+      navigate(from, { replace: true })
+    } else if (result.requiresTotpSetup) {
+      await goToSetup()
+    } else {
+      setError(result.error || 'Failed to set password')
     }
 
     setLoading(false)
@@ -112,11 +141,56 @@ function Login() {
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             {step === 'credentials' && 'Sign in to your account'}
+            {step === 'changepass' && 'Choose your password'}
             {step === 'totp' && 'Two-factor authentication'}
             {step === 'setup' && 'Set up two-factor authentication'}
             {step === 'forgot' && 'Reset your password'}
           </p>
         </div>
+
+        {/* ── Step 1b: Choose initial password ── */}
+        {step === 'changepass' && (
+          <form className="mt-8 space-y-6" onSubmit={handleChangePass}>
+            <p className="text-sm text-gray-600">
+              Your account was created by an admin. Please choose your own password before continuing.
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
+                <input
+                  type="password"
+                  autoFocus
+                  required
+                  minLength={8}
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  placeholder="Minimum 8 characters"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm password</label>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={newPasswordConfirm}
+                  onChange={e => setNewPasswordConfirm(e.target.value)}
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  placeholder="Re-enter your password"
+                />
+              </div>
+            </div>
+            {error && <div className="rounded-md bg-red-50 p-4"><p className="text-sm text-red-700">{error}</p></div>}
+            <button
+              type="submit"
+              disabled={loading || newPassword.length < 8}
+              className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Saving…' : 'Set password & continue'}
+            </button>
+          </form>
+        )}
 
         {/* ── Step 1: Email + Password ── */}
         {step === 'credentials' && (
