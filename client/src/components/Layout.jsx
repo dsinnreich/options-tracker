@@ -87,7 +87,10 @@ function Layout() {
 
   const inPortfolio = location.pathname.startsWith('/portfolio')
   const inResearch = location.pathname.startsWith('/research')
-  const inOptions = !inPortfolio && !inResearch
+  const inOptions = location.pathname === '/' ||
+    location.pathname === '/add' ||
+    location.pathname.startsWith('/edit/') ||
+    location.pathname.startsWith('/roll/')
 
   return (
     <div className="min-h-screen bg-gray-50">

@@ -18,12 +18,13 @@ function Login() {
   const [forgotMessage, setForgotMessage] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isFirstLogin, setIsFirstLogin] = useState(false)
 
   const { login, setInitialPassword, submitTotp, getSetupSecret, enableTotp, forgotPassword } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
-  const from = location.state?.from?.pathname || '/'
+  const from = location.state?.from?.pathname || '/portfolio'
 
   const goToSetup = async () => {
     const secret = await getSetupSecret()
@@ -46,6 +47,7 @@ function Login() {
     if (result.success) {
       navigate(from, { replace: true })
     } else if (result.requiresPasswordChange) {
+      setIsFirstLogin(true)
       setStep('changepass')
     } else if (result.requires2fa) {
       setStep('totp')
@@ -70,7 +72,7 @@ function Login() {
     const result = await setInitialPassword(newPassword)
 
     if (result.success) {
-      navigate(from, { replace: true })
+      navigate('/help', { replace: true })
     } else if (result.requiresTotpSetup) {
       await goToSetup()
     } else {
@@ -105,7 +107,7 @@ function Login() {
     const result = await enableTotp(setupCode.trim())
 
     if (result.success) {
-      navigate(from, { replace: true })
+      navigate(isFirstLogin ? '/help' : from, { replace: true })
     } else {
       setError(result.error || 'Invalid code — try again')
       setSetupCode('')
