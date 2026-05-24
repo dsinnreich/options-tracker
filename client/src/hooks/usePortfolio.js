@@ -109,8 +109,9 @@ export function usePortfolio() {
     return res.json()
   }, [])
 
-  const getAssetClassMap = useCallback(async () => {
-    const res = await fetch(`${API}/asset-class-map`, { credentials: 'include' })
+  const getAssetClassMap = useCallback(async (portfolioId) => {
+    const url = portfolioId ? `${API}/asset-class-map?portfolio_id=${portfolioId}` : `${API}/asset-class-map`
+    const res = await fetch(url, { credentials: 'include' })
     if (!res.ok) throw new Error('Failed to fetch asset class map')
     return res.json()
   }, [])

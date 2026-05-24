@@ -259,7 +259,7 @@ export default function PortfolioDashboard() {
     try {
       const [imps, map] = await Promise.all([
         getImports(portfolioId),
-        getAssetClassMap()
+        getAssetClassMap(portfolioId)
       ])
       setImports(imps)
       setAssetClassMap(map)
@@ -548,7 +548,7 @@ export default function PortfolioDashboard() {
 
   // --- Asset class map ---
   const refreshMap = async () => {
-    const map = await getAssetClassMap()
+    const map = await getAssetClassMap(activePortfolioId)
     setAssetClassMap(map)
   }
 

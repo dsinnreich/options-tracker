@@ -209,11 +209,17 @@ router.put('/:id/shares', (req, res) => {
 // ---------------------------------------------------------------------------
 
 // GET /api/portfolio/asset-class-map — returns merged list: user overrides + global defaults
+// ?portfolio_id=X: when the portfolio is shared with viewer, returns the owner's map instead
 router.get('/asset-class-map', (req, res) => {
   const userId = req.session.userId
+  let mapUserId = userId
+  if (req.query.portfolio_id) {
+    const portfolio = getPortfolioRead(req.query.portfolio_id, userId)
+    if (portfolio) mapUserId = portfolio.user_id
+  }
   const userMappings = db.prepare(
     'SELECT * FROM asset_class_map WHERE user_id = ? ORDER BY asset_class, style, symbol'
-  ).all(userId)
+  ).all(mapUserId)
   const globalMappings = db.prepare(
     'SELECT * FROM global_asset_class_map ORDER BY asset_class, style, symbol'
   ).all()
