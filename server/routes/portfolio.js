@@ -215,6 +215,7 @@ router.get('/asset-class-map', (req, res) => {
   let mapUserId = userId
   if (req.query.portfolio_id) {
     const portfolio = getPortfolioRead(req.query.portfolio_id, userId)
+    console.log(`[asset-class-map] portfolio_id=${req.query.portfolio_id} requestingUser=${userId} portfolio=`, portfolio ? `id=${portfolio.id} owner=${portfolio.user_id}` : 'NOT FOUND')
     if (portfolio) mapUserId = portfolio.user_id
   }
   const userMappings = db.prepare(
@@ -223,6 +224,8 @@ router.get('/asset-class-map', (req, res) => {
   const globalMappings = db.prepare(
     'SELECT * FROM global_asset_class_map ORDER BY asset_class, style, symbol'
   ).all()
+
+  console.log(`[asset-class-map] mapUserId=${mapUserId} userMappings=${userMappings.length} globalMappings=${globalMappings.length}`)
 
   const globalBySymbol = {}
   for (const g of globalMappings) globalBySymbol[g.symbol.toUpperCase()] = g
