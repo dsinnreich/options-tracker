@@ -444,13 +444,18 @@ router.get('/me', (req, res) => {
   res.json({ id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1, totpEnabled: user.totp_enabled === 1 })
 })
 
-// Email transporter
-let emailTransporter = null
+// Email transporter — recreated each request so env var changes take effect without restart
 function getEmailTransporter() {
-  if (!emailTransporter && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    emailTransporter = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD } })
-  }
-  return emailTransporter
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return null
+  return nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  })
 }
 
 router.post('/forgot-password', async (req, res) => {
@@ -463,7 +468,10 @@ router.post('/forgot-password', async (req, res) => {
     const resetTokenExpires = new Date(Date.now() + 3600000).toISOString()
     db.prepare('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?').run(resetToken, resetTokenExpires, user.id)
     const transporter = getEmailTransporter()
-    if (!transporter) return res.status(500).json({ error: 'Email service not configured' })
+    if (!transporter) {
+      console.error('Password reset: GMAIL_USER or GMAIL_APP_PASSWORD not set in environment')
+      return res.status(500).json({ error: 'Email service not configured. Contact the admin to reset your password.' })
+    }
     const resetUrl = `${process.env.APP_URL || 'http://localhost:3001'}/reset-password?token=${resetToken}`
     await transporter.sendMail({
       from: process.env.GMAIL_USER, to: email,
@@ -472,8 +480,8 @@ router.post('/forgot-password', async (req, res) => {
     })
     res.json({ success: true, message: 'If that email exists, a reset link has been sent' })
   } catch (err) {
-    console.error('Password reset request error:', err)
-    res.status(500).json({ error: 'Failed to send reset email' })
+    console.error('Password reset request error:', err.message)
+    res.status(500).json({ error: `Failed to send reset email: ${err.message}` })
   }
 })
 

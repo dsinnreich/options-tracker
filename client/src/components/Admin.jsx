@@ -76,6 +76,7 @@ function Admin() {
   const [deleteTarget, setDeleteTarget] = useState(null) // { id, name }
   const [deleteText, setDeleteText] = useState('')
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [resetLink, setResetLink] = useState(null) // { url, userName }
 
   // Global asset class map
   const [globalMap, setGlobalMap] = useState([])
@@ -287,6 +288,20 @@ function Admin() {
     setDeleteLoading(false)
   }
 
+  const handleGenerateResetLink = async (user) => {
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}/reset-link`, {
+        method: 'POST', credentials: 'include'
+      })
+      const data = await response.json()
+      if (response.status === 403 && data.error === 'admin_verify_required') { setNeedsVerification(true); return }
+      if (!response.ok) throw new Error(data.error || 'Failed to generate link')
+      setResetLink({ url: data.resetUrl, userName: user.name })
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   const startEditUser = (user) => {
     setShowEditForm(user.id)
     setFormData({ email: user.email, name: user.name, password: '', isAdmin: user.is_admin === 1 })
@@ -401,6 +416,35 @@ function Admin() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {resetLink && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900">Password reset link for {resetLink.userName}</h2>
+            <p className="text-sm text-gray-600">Copy this link and send it to the user. It expires in 1 hour.</p>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={resetLink.url}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm font-mono bg-gray-50 focus:outline-none"
+                onFocus={e => e.target.select()}
+              />
+              <button
+                onClick={() => { navigator.clipboard.writeText(resetLink.url) }}
+                className="px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
+              >
+                Copy
+              </button>
+            </div>
+            <button
+              onClick={() => setResetLink(null)}
+              className="w-full py-2 px-4 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
@@ -753,6 +797,7 @@ function Admin() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
                       <button onClick={() => startEditUser(user)} className="text-blue-600 hover:text-blue-900">Edit</button>
+                      <button onClick={() => handleGenerateResetLink(user)} className="text-amber-600 hover:text-amber-900">Reset link</button>
                       <button onClick={() => { setDeleteTarget({ id: user.id, name: user.name }); setDeleteText('') }} className="text-red-600 hover:text-red-900">Delete</button>
                     </td>
                   </tr>

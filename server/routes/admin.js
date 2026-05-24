@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
+import crypto from 'crypto'
 import db from '../db.js'
 
 const router = Router()
@@ -187,6 +188,23 @@ router.put('/users/:id', requireAdmin, requireAdminVerified, async (req, res) =>
   } catch (error) {
     console.error('Update user error:', error)
     res.status(500).json({ error: 'Failed to update user' })
+  }
+})
+
+// Generate a password reset link for a user (admin fallback when email is unavailable)
+router.post('/users/:id/reset-link', requireAdmin, requireAdminVerified, (req, res) => {
+  try {
+    const userId = parseInt(req.params.id)
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId)
+    if (!user) return res.status(404).json({ error: 'User not found' })
+    const resetToken = crypto.randomBytes(32).toString('hex')
+    const resetTokenExpires = new Date(Date.now() + 3600000).toISOString()
+    db.prepare('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?').run(resetToken, resetTokenExpires, userId)
+    const appUrl = process.env.APP_URL || 'http://localhost:3001'
+    res.json({ resetUrl: `${appUrl}/reset-password?token=${resetToken}` })
+  } catch (err) {
+    console.error('Generate reset link error:', err)
+    res.status(500).json({ error: 'Failed to generate reset link' })
   }
 })
 
