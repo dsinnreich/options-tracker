@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { Navigate } from 'react-router-dom'
+import GlobalAssetClassMapEditor from './GlobalAssetClassMapEditor'
 
 // ── Admin step-up modal ────────────────────────────────────────────────────
 function AdminVerifyModal({ onVerified }) {
@@ -76,6 +77,9 @@ function Admin() {
   const [deleteText, setDeleteText] = useState('')
   const [deleteLoading, setDeleteLoading] = useState(false)
 
+  // Global asset class map
+  const [globalMap, setGlobalMap] = useState([])
+
   // Backup
   const [dbStats, setDbStats] = useState(null)
   const [backupLoading, setBackupLoading] = useState(false)
@@ -121,6 +125,13 @@ function Admin() {
     } catch {}
   }, [])
 
+  const fetchGlobalMap = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/global-asset-class-map', { credentials: 'include' })
+      if (res.ok) setGlobalMap(await res.json())
+    } catch {}
+  }, [])
+
   const fetchSecurity = useCallback(async () => {
     setSecurityLoading(true)
     const [histResult, devResult] = await Promise.all([fetchLoginHistory(), fetchTrustedDevices()])
@@ -139,16 +150,18 @@ function Admin() {
       fetchUsers()
       fetchStats()
       fetchSecurity()
+      fetchGlobalMap()
     }
-  }, [isAdmin, fetchUsers, fetchStats, fetchSecurity])
+  }, [isAdmin, fetchUsers, fetchStats, fetchSecurity, fetchGlobalMap])
 
   // Re-load after step-up
   useEffect(() => {
     if (adminUnlocked) {
       fetchUsers()
       fetchStats()
+      fetchGlobalMap()
     }
-  }, [adminUnlocked, fetchUsers, fetchStats])
+  }, [adminUnlocked, fetchUsers, fetchStats, fetchGlobalMap])
 
   const handleRemoveTrustedDevice = async (id) => {
     const result = await removeTrustedDevice(id)
@@ -285,6 +298,66 @@ function Admin() {
     setShowEditForm(null)
     setFormData({ email: '', name: '', password: '', isAdmin: false })
     setError(null)
+  }
+
+  const handleGlobalMapAdd = async (form) => {
+    const res = await fetch('/api/admin/global-asset-class-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(form)
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to add mapping')
+    await fetchGlobalMap()
+  }
+
+  const handleGlobalMapUpdate = async (id, form) => {
+    const res = await fetch(`/api/admin/global-asset-class-map/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(form)
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to update mapping')
+    await fetchGlobalMap()
+  }
+
+  const handleGlobalMapDelete = async (id) => {
+    const res = await fetch(`/api/admin/global-asset-class-map/${id}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to delete mapping')
+    await fetchGlobalMap()
+  }
+
+  const handleGlobalMapExport = async () => {
+    const res = await fetch('/api/admin/global-asset-class-map/export', { credentials: 'include' })
+    if (!res.ok) throw new Error('Export failed')
+    const disposition = res.headers.get('Content-Disposition') || ''
+    const match = disposition.match(/filename="([^"]+)"/)
+    const filename = match ? match[1] : 'global-asset-class-map.json'
+    const blob = await res.blob()
+    const href = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = href; a.download = filename; a.click()
+    URL.revokeObjectURL(href)
+  }
+
+  const handleGlobalMapImport = async (data) => {
+    const res = await fetch('/api/admin/global-asset-class-map/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data)
+    })
+    const result = await res.json()
+    if (!res.ok) throw new Error(result.error || 'Import failed')
+    await fetchGlobalMap()
+    return result
   }
 
   if (!isAdmin) return <Navigate to="/" replace />
@@ -619,6 +692,25 @@ function Admin() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* ── Global Asset Class Map ── */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Global Asset Class Map</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Define default asset class and style classifications for ETFs and funds.
+              These apply to all users automatically — each user can override individual symbols from their own Asset Class Map editor.
+            </p>
+          </div>
+          <GlobalAssetClassMapEditor
+            globalMap={globalMap}
+            onAdd={handleGlobalMapAdd}
+            onUpdate={handleGlobalMapUpdate}
+            onDelete={handleGlobalMapDelete}
+            onExport={handleGlobalMapExport}
+            onImport={handleGlobalMapImport}
+          />
         </div>
 
         {/* ── Users table ── */}

@@ -134,12 +134,33 @@ router.delete('/:id', (req, res) => {
 // NOTE: these routes must come before /:id routes to avoid being swallowed
 // ---------------------------------------------------------------------------
 
-// GET /api/portfolio/asset-class-map
+// GET /api/portfolio/asset-class-map — returns merged list: user overrides + global defaults
 router.get('/asset-class-map', (req, res) => {
-  const mappings = db.prepare(
+  const userId = req.session.userId
+  const userMappings = db.prepare(
     'SELECT * FROM asset_class_map WHERE user_id = ? ORDER BY asset_class, style, symbol'
-  ).all(req.session.userId)
-  res.json(mappings)
+  ).all(userId)
+  const globalMappings = db.prepare(
+    'SELECT * FROM global_asset_class_map ORDER BY asset_class, style, symbol'
+  ).all()
+
+  const globalBySymbol = {}
+  for (const g of globalMappings) globalBySymbol[g.symbol.toUpperCase()] = g
+
+  const userSymbols = new Set(userMappings.map(m => m.symbol.toUpperCase()))
+
+  const result = [
+    ...userMappings.map(m => ({
+      ...m,
+      source: 'user',
+      has_global_default: !!globalBySymbol[m.symbol.toUpperCase()]
+    })),
+    ...globalMappings
+      .filter(g => !userSymbols.has(g.symbol.toUpperCase()))
+      .map(g => ({ ...g, source: 'global', has_global_default: false }))
+  ]
+
+  res.json(result)
 })
 
 // POST /api/portfolio/asset-class-map

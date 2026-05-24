@@ -105,7 +105,15 @@ export default function AssetClassMapEditor({ assetClassMap, unmappedSymbols, po
 
   const startQuickAdd = (sym) => {
     setAddingFor(sym)
-    setNewForm({ symbol: sym, investment_name: descFor(sym), asset_class: '', style: '' })
+    setNewForm({ symbol: sym, investment_name: descFor(sym), asset_class: '', style: '', proxy_ticker: '' })
+    setError(null)
+    setTimeout(() => document.getElementById('new-asset-class')?.focus(), 50)
+  }
+
+  // Pre-fill the add form with a global entry so the user can customize and save as their own override
+  const startCustomize = (m) => {
+    setAddingFor(m.symbol)
+    setNewForm({ symbol: m.symbol, investment_name: m.investment_name || '', asset_class: m.asset_class, style: m.style, proxy_ticker: m.proxy_ticker || '' })
     setError(null)
     setTimeout(() => document.getElementById('new-asset-class')?.focus(), 50)
   }
@@ -250,7 +258,7 @@ export default function AssetClassMapEditor({ assetClassMap, unmappedSymbols, po
         {error && <p className="text-red-600 text-xs mt-2">{error}</p>}
       </div>
 
-      {/* Existing mappings table */}
+      {/* Mappings table */}
       <div>
         <h3 className="text-sm font-semibold text-gray-700 mb-3">
           All Mappings ({assetClassMap.length})
@@ -267,91 +275,106 @@ export default function AssetClassMapEditor({ assetClassMap, unmappedSymbols, po
                   <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">Asset Class</th>
                   <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-28">Style</th>
                   <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-28" title="Ticker to borrow returns from when this symbol has no Morningstar data">Return Proxy</th>
-                  <th className="px-4 py-2.5 w-24"></th>
+                  <th className="px-4 py-2.5 w-36"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {assetClassMap.map(m => (
-                  <tr key={m.id} className="hover:bg-gray-50">
-                    {editingId === m.id ? (
-                      <>
-                        <td className="px-4 py-2">
+                {assetClassMap.map(m => {
+                  const isGlobal = m.source === 'global'
+
+                  // ── Global default row (read-only) ──
+                  if (isGlobal) {
+                    return (
+                      <tr key={`g|${m.symbol}`} className="hover:bg-blue-50 bg-blue-50/30">
+                        <td className="px-4 py-2.5">
                           <span className="font-medium text-gray-900">{m.symbol}</span>
+                          <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-700 font-medium">Global</span>
                         </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="text"
-                            value={editForm.investment_name}
-                            onChange={e => setEditForm(f => ({ ...f, investment_name: e.target.value }))}
-                            className="border rounded px-2 py-1 text-sm w-full"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="text"
-                            value={editForm.asset_class}
-                            onChange={e => setEditForm(f => ({ ...f, asset_class: e.target.value }))}
-                            list="ac-suggestions"
-                            className="border rounded px-2 py-1 text-sm w-full"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="text"
-                            value={editForm.style}
-                            onChange={e => setEditForm(f => ({ ...f, style: e.target.value }))}
-                            list="style-suggestions"
-                            className="border rounded px-2 py-1 text-sm w-full"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="text"
-                            value={editForm.proxy_ticker}
-                            onChange={e => setEditForm(f => ({ ...f, proxy_ticker: e.target.value.toUpperCase() }))}
-                            placeholder="e.g. IVV"
-                            className="border rounded px-2 py-1 text-sm w-20 uppercase"
-                            title="Use returns from this ticker when Morningstar data is unavailable"
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <button
-                            onClick={() => handleUpdate(m.id)}
-                            disabled={saving}
-                            className="text-green-600 hover:text-green-800 text-xs font-medium mr-2 disabled:opacity-50"
-                          >
-                            Save
-                          </button>
-                          <button onClick={cancelEdit} className="text-gray-400 hover:text-gray-600 text-xs">
-                            Cancel
-                          </button>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="px-4 py-2.5 font-medium text-gray-900">{m.symbol}</td>
-                        <td className="px-4 py-2.5 text-gray-600">{m.investment_name || '—'}</td>
-                        <td className="px-4 py-2.5 text-gray-700">{m.asset_class}</td>
-                        <td className="px-4 py-2.5 text-gray-700">{m.style}</td>
-                        <td className="px-4 py-2.5 text-gray-500 font-mono text-xs">{m.proxy_ticker || '—'}</td>
+                        <td className="px-4 py-2.5 text-gray-500 italic">{m.investment_name || '—'}</td>
+                        <td className="px-4 py-2.5 text-gray-600">{m.asset_class}</td>
+                        <td className="px-4 py-2.5 text-gray-600">{m.style}</td>
+                        <td className="px-4 py-2.5 text-gray-400 font-mono text-xs">{m.proxy_ticker || '—'}</td>
                         <td className="px-4 py-2.5 text-right">
                           <button
-                            onClick={() => startEdit(m)}
-                            className="text-blue-500 hover:text-blue-700 text-xs font-medium mr-3"
+                            onClick={() => startCustomize(m)}
+                            className="text-blue-600 hover:text-blue-800 text-xs font-medium"
                           >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(m.id, m.symbol)}
-                            className="text-red-400 hover:text-red-600 text-xs"
-                          >
-                            Delete
+                            Customize
                           </button>
                         </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
+                      </tr>
+                    )
+                  }
+
+                  // ── User override row (editable) ──
+                  return (
+                    <tr key={m.id} className="hover:bg-gray-50">
+                      {editingId === m.id ? (
+                        <>
+                          <td className="px-4 py-2">
+                            <span className="font-medium text-gray-900">{m.symbol}</span>
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="text"
+                              value={editForm.investment_name}
+                              onChange={e => setEditForm(f => ({ ...f, investment_name: e.target.value }))}
+                              className="border rounded px-2 py-1 text-sm w-full"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="text"
+                              value={editForm.asset_class}
+                              onChange={e => setEditForm(f => ({ ...f, asset_class: e.target.value }))}
+                              list="ac-suggestions"
+                              className="border rounded px-2 py-1 text-sm w-full"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="text"
+                              value={editForm.style}
+                              onChange={e => setEditForm(f => ({ ...f, style: e.target.value }))}
+                              list="style-suggestions"
+                              className="border rounded px-2 py-1 text-sm w-full"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="text"
+                              value={editForm.proxy_ticker}
+                              onChange={e => setEditForm(f => ({ ...f, proxy_ticker: e.target.value.toUpperCase() }))}
+                              placeholder="e.g. IVV"
+                              className="border rounded px-2 py-1 text-sm w-20 uppercase"
+                            />
+                          </td>
+                          <td className="px-4 py-2 text-right whitespace-nowrap">
+                            <button onClick={() => handleUpdate(m.id)} disabled={saving} className="text-green-600 hover:text-green-800 text-xs font-medium mr-2 disabled:opacity-50">Save</button>
+                            <button onClick={cancelEdit} className="text-gray-400 hover:text-gray-600 text-xs">Cancel</button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-2.5 font-medium text-gray-900">{m.symbol}</td>
+                          <td className="px-4 py-2.5 text-gray-600">{m.investment_name || '—'}</td>
+                          <td className="px-4 py-2.5 text-gray-700">{m.asset_class}</td>
+                          <td className="px-4 py-2.5 text-gray-700">{m.style}</td>
+                          <td className="px-4 py-2.5 text-gray-500 font-mono text-xs">{m.proxy_ticker || '—'}</td>
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                            <button onClick={() => startEdit(m)} className="text-blue-500 hover:text-blue-700 text-xs font-medium mr-3">Edit</button>
+                            <button
+                              onClick={() => handleDelete(m.id, m.symbol)}
+                              className="text-red-400 hover:text-red-600 text-xs"
+                            >
+                              {m.has_global_default ? 'Revert to global' : 'Delete'}
+                            </button>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

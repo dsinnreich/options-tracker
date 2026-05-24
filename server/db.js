@@ -423,6 +423,24 @@ const migrations = [
       console.log('✅ Migrated to version 11: Added proxy_ticker to asset_class_map')
     }
   },
+  {
+    version: 12,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS global_asset_class_map (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          symbol TEXT NOT NULL UNIQUE,
+          investment_name TEXT,
+          asset_class TEXT NOT NULL,
+          style TEXT NOT NULL,
+          proxy_ticker TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+      console.log('✅ Migrated to version 12: Added global_asset_class_map table')
+    }
+  },
 ]
 
 // Run pending migrations
