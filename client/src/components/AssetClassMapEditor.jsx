@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 
-const EMPTY_FORM = { symbol: '', investment_name: '', asset_class: '', style: '' }
+const EMPTY_FORM = { symbol: '', investment_name: '', asset_class: '', style: '', proxy_ticker: '' }
 
 export default function AssetClassMapEditor({ assetClassMap, unmappedSymbols, positions, onAdd, onUpdate, onDelete, onExport, onImport }) {
   const [editingId, setEditingId] = useState(null)
@@ -47,7 +47,7 @@ export default function AssetClassMapEditor({ assetClassMap, unmappedSymbols, po
 
   const startEdit = (m) => {
     setEditingId(m.id)
-    setEditForm({ symbol: m.symbol, investment_name: m.investment_name || '', asset_class: m.asset_class, style: m.style })
+    setEditForm({ symbol: m.symbol, investment_name: m.investment_name || '', asset_class: m.asset_class, style: m.style, proxy_ticker: m.proxy_ticker || '' })
     setError(null)
   }
 
@@ -217,6 +217,17 @@ export default function AssetClassMapEditor({ assetClassMap, unmappedSymbols, po
               {existingStyles.map(s => <option key={s} value={s} />)}
             </datalist>
           </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Return Proxy</label>
+            <input
+              type="text"
+              value={newForm.proxy_ticker}
+              onChange={e => setNewForm(f => ({ ...f, proxy_ticker: e.target.value.toUpperCase() }))}
+              placeholder="e.g. IVV"
+              className="border rounded px-2.5 py-1.5 text-sm w-24 uppercase"
+              title="Use returns from this ticker when Morningstar data is unavailable for this symbol"
+            />
+          </div>
           <div className="flex gap-2">
             <button
               type="submit"
@@ -255,6 +266,7 @@ export default function AssetClassMapEditor({ assetClassMap, unmappedSymbols, po
                   <th className="text-left px-4 py-2.5 font-medium text-gray-600">Investment Name</th>
                   <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">Asset Class</th>
                   <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-28">Style</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-28" title="Ticker to borrow returns from when this symbol has no Morningstar data">Return Proxy</th>
                   <th className="px-4 py-2.5 w-24"></th>
                 </tr>
               </thead>
@@ -292,6 +304,16 @@ export default function AssetClassMapEditor({ assetClassMap, unmappedSymbols, po
                             className="border rounded px-2 py-1 text-sm w-full"
                           />
                         </td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="text"
+                            value={editForm.proxy_ticker}
+                            onChange={e => setEditForm(f => ({ ...f, proxy_ticker: e.target.value.toUpperCase() }))}
+                            placeholder="e.g. IVV"
+                            className="border rounded px-2 py-1 text-sm w-20 uppercase"
+                            title="Use returns from this ticker when Morningstar data is unavailable"
+                          />
+                        </td>
                         <td className="px-4 py-2 text-right">
                           <button
                             onClick={() => handleUpdate(m.id)}
@@ -311,6 +333,7 @@ export default function AssetClassMapEditor({ assetClassMap, unmappedSymbols, po
                         <td className="px-4 py-2.5 text-gray-600">{m.investment_name || '—'}</td>
                         <td className="px-4 py-2.5 text-gray-700">{m.asset_class}</td>
                         <td className="px-4 py-2.5 text-gray-700">{m.style}</td>
+                        <td className="px-4 py-2.5 text-gray-500 font-mono text-xs">{m.proxy_ticker || '—'}</td>
                         <td className="px-4 py-2.5 text-right">
                           <button
                             onClick={() => startEdit(m)}

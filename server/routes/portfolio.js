@@ -144,14 +144,14 @@ router.get('/asset-class-map', (req, res) => {
 
 // POST /api/portfolio/asset-class-map
 router.post('/asset-class-map', (req, res) => {
-  const { symbol, investment_name, asset_class, style } = req.body
+  const { symbol, investment_name, asset_class, style, proxy_ticker } = req.body
   if (!symbol || !asset_class || !style) {
     return res.status(400).json({ error: 'symbol, asset_class, and style are required' })
   }
   try {
     const result = db.prepare(
-      'INSERT INTO asset_class_map (user_id, symbol, investment_name, asset_class, style) VALUES (?, ?, ?, ?, ?)'
-    ).run(req.session.userId, symbol.trim().toUpperCase(), (investment_name || '').trim(), asset_class.trim(), style.trim())
+      'INSERT INTO asset_class_map (user_id, symbol, investment_name, asset_class, style, proxy_ticker) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(req.session.userId, symbol.trim().toUpperCase(), (investment_name || '').trim(), asset_class.trim(), style.trim(), (proxy_ticker || '').trim().toUpperCase() || null)
     res.status(201).json(db.prepare('SELECT * FROM asset_class_map WHERE id = ?').get(result.lastInsertRowid))
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'That symbol is already mapped' })
@@ -166,17 +166,18 @@ router.put('/asset-class-map/:id', (req, res) => {
   ).get(req.params.id, req.session.userId)
   if (!mapping) return res.status(404).json({ error: 'Mapping not found' })
 
-  const { symbol, investment_name, asset_class, style } = req.body
+  const { symbol, investment_name, asset_class, style, proxy_ticker } = req.body
   try {
     db.prepare(`
       UPDATE asset_class_map
-      SET symbol = ?, investment_name = ?, asset_class = ?, style = ?, updated_at = CURRENT_TIMESTAMP
+      SET symbol = ?, investment_name = ?, asset_class = ?, style = ?, proxy_ticker = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
       (symbol || mapping.symbol).trim().toUpperCase(),
       investment_name !== undefined ? investment_name.trim() : mapping.investment_name,
       (asset_class || mapping.asset_class).trim(),
       (style || mapping.style).trim(),
+      proxy_ticker !== undefined ? ((proxy_ticker || '').trim().toUpperCase() || null) : mapping.proxy_ticker,
       mapping.id
     )
     res.json(db.prepare('SELECT * FROM asset_class_map WHERE id = ?').get(mapping.id))
@@ -189,7 +190,7 @@ router.put('/asset-class-map/:id', (req, res) => {
 // GET /api/portfolio/asset-class-map/export — download all mappings as JSON
 router.get('/asset-class-map/export', (req, res) => {
   const mappings = db.prepare(
-    'SELECT symbol, investment_name, asset_class, style FROM asset_class_map WHERE user_id = ? ORDER BY asset_class, style, symbol'
+    'SELECT symbol, investment_name, asset_class, style, proxy_ticker FROM asset_class_map WHERE user_id = ? ORDER BY asset_class, style, symbol'
   ).all(req.session.userId)
 
   const exportData = {
@@ -212,19 +213,20 @@ router.post('/asset-class-map/import', (req, res) => {
   }
 
   const upsert = db.prepare(`
-    INSERT INTO asset_class_map (user_id, symbol, investment_name, asset_class, style)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO asset_class_map (user_id, symbol, investment_name, asset_class, style, proxy_ticker)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id, symbol) DO UPDATE SET
       investment_name = excluded.investment_name,
       asset_class     = excluded.asset_class,
       style           = excluded.style,
+      proxy_ticker    = excluded.proxy_ticker,
       updated_at      = CURRENT_TIMESTAMP
   `)
 
   const tx = db.transaction((rows) => {
     for (const m of rows) {
       if (!m.symbol || !m.asset_class || !m.style) continue
-      upsert.run(req.session.userId, m.symbol.trim().toUpperCase(), (m.investment_name || '').trim(), m.asset_class.trim(), m.style.trim())
+      upsert.run(req.session.userId, m.symbol.trim().toUpperCase(), (m.investment_name || '').trim(), m.asset_class.trim(), m.style.trim(), (m.proxy_ticker || '').trim().toUpperCase() || null)
     }
   })
   tx(mappings)

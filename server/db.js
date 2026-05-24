@@ -412,6 +412,17 @@ const migrations = [
       console.log('✅ Migrated to version 10: Added must_change_password to users')
     }
   },
+  {
+    version: 11,
+    up(db) {
+      try {
+        db.exec(`ALTER TABLE asset_class_map ADD COLUMN proxy_ticker TEXT`)
+      } catch (err) {
+        if (!err.message.includes('duplicate column name')) throw err
+      }
+      console.log('✅ Migrated to version 11: Added proxy_ticker to asset_class_map')
+    }
+  },
 ]
 
 // Run pending migrations

@@ -25,12 +25,13 @@ const RESEARCH_COLS = [
 ]
 
 // Value-weighted average of research fields across a list of holdings
-function weightedResearch(holdings, researchByTicker) {
+function weightedResearch(holdings, researchByTicker, proxyBySymbol) {
   const result = {}
   for (const col of RESEARCH_COLS) {
     const pairs = holdings
       .map(h => {
-        const r = researchByTicker[h.symbol.replace(/\*+$/, '').toUpperCase()]
+        const sym = h.symbol.replace(/\*+$/, '').toUpperCase()
+        const r = researchByTicker[sym] ?? researchByTicker[proxyBySymbol[sym]]
         const v = r?.[col.key]
         return v != null ? { v, w: h.current_value } : null
       })
@@ -155,6 +156,15 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
     return map
   }, [researchData])
 
+  // symbol → proxy_ticker for symbols that have no direct research data
+  const proxyBySymbol = useMemo(() => {
+    const map = {}
+    for (const m of assetClassMap) {
+      if (m.proxy_ticker) map[m.symbol.toUpperCase()] = m.proxy_ticker.toUpperCase()
+    }
+    return map
+  }, [assetClassMap])
+
   const pivot = useMemo(() => buildPivot(positions, assetClassMap), [positions, assetClassMap])
 
   const isACExpanded = (ac) => expandedAC[ac] !== undefined ? expandedAC[ac] : true
@@ -175,11 +185,11 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
     const result = []
     for (const acRow of assetClasses) {
       const acExpanded = isACExpanded(acRow.asset_class)
-      const acResearch = weightedResearch(acRow.allHoldings, researchByTicker)
+      const acResearch = weightedResearch(acRow.allHoldings, researchByTicker, proxyBySymbol)
       if (acExpanded) {
         for (const sRow of acRow.children) {
           const styleExpanded = isStyleExpanded(acRow.asset_class, sRow.style)
-          const styleResearch = weightedResearch(sRow.children, researchByTicker)
+          const styleResearch = weightedResearch(sRow.children, researchByTicker, proxyBySymbol)
           if (styleExpanded) {
             for (const hRow of sRow.children) {
               result.push({ type: 'holding', acRow, sRow, hRow })
@@ -192,10 +202,10 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
     }
     // Grand total research = weighted average across everything
     const allHoldings = assetClasses.flatMap(ac => ac.allHoldings)
-    result.push({ type: 'grand_total', grandResearch: weightedResearch(allHoldings, researchByTicker) })
+    result.push({ type: 'grand_total', grandResearch: weightedResearch(allHoldings, researchByTicker, proxyBySymbol) })
     return result
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pivot, expandedAC, expandedStyles, researchByTicker])
+  }, [pivot, expandedAC, expandedStyles, researchByTicker, proxyBySymbol])
 
   function researchColor(col, val) {
     if (!col.color || val == null) return ''
@@ -258,7 +268,9 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
               if (row.type === 'holding') {
                 const { acRow, sRow, hRow } = row
                 const lookupSym = hRow.symbol.replace(/\*+$/, '').toUpperCase()
-                const r = researchByTicker[lookupSym]
+                const proxyTicker = proxyBySymbol[lookupSym]
+                const r = researchByTicker[lookupSym] ?? (proxyTicker ? researchByTicker[proxyTicker] : undefined)
+                const isProxied = !researchByTicker[lookupSym] && !!r
                 return (
                   <tr key={`h|${acRow.asset_class}|${sRow.style}|${hRow.symbol}`}
                       className="border-b border-gray-100 hover:bg-gray-50">
@@ -266,6 +278,9 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
                     <td className="px-3 py-1 text-gray-300">└</td>
                     <td className="px-3 py-1 overflow-hidden" style={{ width: nameColWidth, maxWidth: nameColWidth }}>
                       <span className="font-medium text-gray-900">{hRow.symbol}</span>
+                      {isProxied && (
+                        <span className="ml-1.5 text-xs text-blue-400 font-normal" title={`Returns proxied from ${proxyTicker}`}>~{proxyTicker}</span>
+                      )}
                       {hRow.description && (
                         <span className="ml-2 text-gray-400 truncate" title={hRow.description}> {hRow.description}</span>
                       )}
