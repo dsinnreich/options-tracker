@@ -32,7 +32,10 @@ export default function PortfolioDashboard() {
     selectWatchlist: selectResearchWatchlist
   } = useResearch()
 
-  const [activePortfolioId, setActivePortfolioId] = useState(null)
+  const [activePortfolioId, setActivePortfolioId] = useState(() => {
+    const saved = parseInt(localStorage.getItem('activePortfolioId'))
+    return saved || null
+  })
   const [activeTab, setActiveTab] = useState('overview')
   const [imports, setImports] = useState([])
   const [selectedImportId, setSelectedImportId] = useState(null)
@@ -102,7 +105,10 @@ export default function PortfolioDashboard() {
 
   // Select first portfolio (in custom order) on initial load
   useEffect(() => {
-    if (portfolios.length > 0 && !activePortfolioId) {
+    if (portfolios.length === 0) return
+    // If saved ID is still valid, keep it; otherwise fall back to first in order
+    const valid = activePortfolioId && portfolios.find(p => p.id === activePortfolioId)
+    if (!valid) {
       const ordered = portfolioOrder
         ? [
             ...portfolioOrder.map(id => portfolios.find(p => p.id === id)).filter(Boolean),
@@ -112,6 +118,12 @@ export default function PortfolioDashboard() {
       setActivePortfolioId(ordered[0].id)
     }
   }, [portfolios, activePortfolioId, portfolioOrder])
+
+  // Persist active portfolio across navigation
+  useEffect(() => {
+    if (activePortfolioId) localStorage.setItem('activePortfolioId', activePortfolioId)
+    else localStorage.removeItem('activePortfolioId')
+  }, [activePortfolioId])
 
   // Restore saved research watchlist when portfolio changes or watchlists load
   useEffect(() => {
