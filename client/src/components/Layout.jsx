@@ -116,16 +116,6 @@ function Layout() {
                   Portfolio
                 </Link>
                 <Link
-                  to="/"
-                  className={`px-4 py-2 rounded-md text-sm font-semibold border transition-colors ${
-                    inOptions
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'text-gray-600 border-transparent hover:bg-gray-100'
-                  }`}
-                >
-                  Options
-                </Link>
-                <Link
                   to="/research"
                   className={`px-4 py-2 rounded-md text-sm font-semibold border transition-colors ${
                     inResearch
@@ -134,6 +124,16 @@ function Layout() {
                   }`}
                 >
                   Research
+                </Link>
+                <Link
+                  to="/"
+                  className={`px-4 py-2 rounded-md text-sm font-semibold border transition-colors ${
+                    inOptions
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'text-gray-600 border-transparent hover:bg-gray-100'
+                  }`}
+                >
+                  Options
                 </Link>
               </div>
             </div>
