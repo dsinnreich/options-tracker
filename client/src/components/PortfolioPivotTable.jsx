@@ -309,7 +309,7 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
           )}
         </div>
         <div className="flex items-center gap-3">
-          {whatIfMode ? (
+          {onSaveTargets && (whatIfMode ? (
             <>
               <span className={`text-sm font-medium ${targetValid ? 'text-green-700' : 'text-red-600'}`}>
                 Total Target: {fmtPct(totalTargetPct)}
@@ -329,7 +329,7 @@ export default function PortfolioPivotTable({ positions, assetClassMap, savedTar
               className="px-3 py-1 bg-blue-50 text-blue-700 text-sm rounded hover:bg-blue-100 border border-blue-200">
               Edit Targets (What-If)
             </button>
-          )}
+          ))}
         </div>
       </div>
 

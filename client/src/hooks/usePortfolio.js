@@ -202,6 +202,29 @@ export function usePortfolio() {
     return res.json()
   }, [])
 
+  const getShareableUsers = useCallback(async () => {
+    const res = await fetch(`${API}/shareable-users`, { credentials: 'include' })
+    if (!res.ok) throw new Error('Failed to fetch users')
+    return res.json()
+  }, [])
+
+  const getPortfolioShares = useCallback(async (portfolioId) => {
+    const res = await fetch(`${API}/${portfolioId}/shares`, { credentials: 'include' })
+    if (!res.ok) throw new Error('Failed to fetch shares')
+    return res.json()
+  }, [])
+
+  const setPortfolioShares = useCallback(async (portfolioId, shares) => {
+    const res = await fetch(`${API}/${portfolioId}/shares`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ shares })
+    })
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+    return res.json()
+  }, [])
+
   return {
     portfolios, loading, error,
     fetchPortfolios,
@@ -212,6 +235,7 @@ export function usePortfolio() {
     exportAssetClassMap, importAssetClassMap,
     getTargets, saveTargets,
     getNotes, saveNotes,
-    importHistory, getHistoryAccounts, getLastTransactions
+    importHistory, getHistoryAccounts, getLastTransactions,
+    getShareableUsers, getPortfolioShares, setPortfolioShares
   }
 }

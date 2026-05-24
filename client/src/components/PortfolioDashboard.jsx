@@ -6,6 +6,120 @@ import PortfolioByAccount from './PortfolioByAccount'
 import AssetClassMapEditor from './AssetClassMapEditor'
 import PortfolioResearchView from './PortfolioResearchView'
 
+function ShareModal({ portfolioId, portfolioName, getShareableUsers, getPortfolioShares, setPortfolioShares, onClose }) {
+  const [users, setUsers] = useState([])
+  const [shares, setShares] = useState([]) // [{ user_id, can_edit }]
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    Promise.all([getShareableUsers(), getPortfolioShares(portfolioId)])
+      .then(([allUsers, existingShares]) => {
+        setUsers(allUsers)
+        setShares(existingShares.map(s => ({ user_id: s.shared_with_user_id, can_edit: s.can_edit === 1 })))
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [portfolioId, getShareableUsers, getPortfolioShares])
+
+  const isShared = (userId) => shares.some(s => s.user_id === userId)
+  const canEditFor = (userId) => shares.find(s => s.user_id === userId)?.can_edit ?? false
+
+  const toggleShare = (userId) => {
+    setShares(prev =>
+      isShared(userId) ? prev.filter(s => s.user_id !== userId) : [...prev, { user_id: userId, can_edit: false }]
+    )
+  }
+
+  const toggleCanEdit = (userId) => {
+    setShares(prev => prev.map(s => s.user_id === userId ? { ...s, can_edit: !s.can_edit } : s))
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await setPortfolioShares(portfolioId, shares)
+      onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Share Portfolio</h2>
+            <p className="text-sm text-gray-500 mt-0.5">{portfolioName}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+
+        {loading ? (
+          <p className="text-sm text-gray-400 py-4 text-center">Loading…</p>
+        ) : users.length === 0 ? (
+          <p className="text-sm text-gray-400 py-4 text-center">No other users to share with.</p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {users.map(u => (
+              <div key={u.id} className="flex items-center justify-between py-3">
+                <div>
+                  <div className="text-sm font-medium text-gray-800">{u.name}</div>
+                  <div className="text-xs text-gray-400">{u.email}</div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={isShared(u.id)}
+                      onChange={() => toggleShare(u.id)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Shared
+                  </label>
+                  <label className={`flex items-center gap-1.5 text-xs cursor-pointer select-none ${isShared(u.id) ? 'text-gray-600' : 'text-gray-300'}`}>
+                    <input
+                      type="checkbox"
+                      checked={canEditFor(u.id)}
+                      disabled={!isShared(u.id)}
+                      onChange={() => toggleCanEdit(u.id)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+                    />
+                    Can edit
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <div className="flex gap-3 pt-1">
+          <button
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="flex-1 py-2 px-4 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 px-4 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const DEFAULT_SUB_TABS = [
   { id: 'overview', label: 'By Asset Class' },
   { id: 'by-account', label: 'By Account' },
@@ -22,7 +136,8 @@ export default function PortfolioDashboard() {
     exportAssetClassMap, importAssetClassMap,
     getTargets, saveTargets,
     getNotes, saveNotes,
-    importHistory, getHistoryAccounts, getLastTransactions
+    importHistory, getHistoryAccounts, getLastTransactions,
+    getShareableUsers, getPortfolioShares, setPortfolioShares
   } = usePortfolio()
 
   const {
@@ -80,6 +195,9 @@ export default function PortfolioDashboard() {
   const [livePrices, setLivePrices] = useState(null) // { symbol: price } or null when hidden
   const [livePricesLoading, setLivePricesLoading] = useState(false)
   const [livePricesError, setLivePricesError] = useState(null)
+
+  // Share modal
+  const [shareModalPortfolioId, setShareModalPortfolioId] = useState(null)
 
   // Tab ordering — persisted to localStorage
   const [portfolioOrder, setPortfolioOrder] = useState(() => {
@@ -463,6 +581,8 @@ export default function PortfolioDashboard() {
   )]
 
   const activePortfolio = portfolios.find(p => p.id === activePortfolioId)
+  const isOwner = activePortfolio?.is_owner === 1
+  const canEdit = activePortfolio?.can_edit === 1
 
   const orderedPortfolios = portfolioOrder
     ? [
@@ -486,6 +606,16 @@ export default function PortfolioDashboard() {
 
   return (
     <div>
+      {shareModalPortfolioId && (
+        <ShareModal
+          portfolioId={shareModalPortfolioId}
+          portfolioName={portfolios.find(p => p.id === shareModalPortfolioId)?.name}
+          getShareableUsers={getShareableUsers}
+          getPortfolioShares={getPortfolioShares}
+          setPortfolioShares={setPortfolioShares}
+          onClose={() => setShareModalPortfolioId(null)}
+        />
+      )}
       {/* Portfolio tab bar */}
       <div className="flex items-center gap-0.5 border-b border-gray-200 mb-6 overflow-x-auto">
         {orderedPortfolios.map((p, i) => (
@@ -530,8 +660,16 @@ export default function PortfolioDashboard() {
                 }`}
               >
                 {p.name}
-                {activePortfolioId === p.id && (
+                {p.shared_by_name && (
+                  <span className="text-xs font-normal text-gray-400">({p.shared_by_name})</span>
+                )}
+                {activePortfolioId === p.id && p.is_owner === 1 && (
                   <span className="flex items-center gap-1">
+                    <span
+                      title="Share portfolio"
+                      className="text-gray-300 hover:text-blue-400 cursor-pointer"
+                      onClick={e => { e.stopPropagation(); setShareModalPortfolioId(p.id) }}
+                    >🔗</span>
                     <span
                       title="Rename"
                       className="text-gray-300 hover:text-gray-500 cursor-pointer"
@@ -647,26 +785,30 @@ export default function PortfolioDashboard() {
                   </span>
                 )}
               </button>
-              <button
-                onClick={() => setActiveTab('history')}
-                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'history'
-                    ? 'bg-green-700 text-white'
-                    : 'bg-green-600 text-white hover:bg-green-700'
-                }`}
-              >
-                History
-              </button>
-              <button
-                onClick={() => setActiveTab('import')}
-                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'import'
-                    ? 'bg-blue-700 text-white'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
-              >
-                Import
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => setActiveTab('history')}
+                  className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'history'
+                      ? 'bg-green-700 text-white'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  History
+                </button>
+              )}
+              {canEdit && (
+                <button
+                  onClick={() => setActiveTab('import')}
+                  className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'import'
+                      ? 'bg-blue-700 text-white'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  Import
+                </button>
+              )}
             </div>
           </div>
 
@@ -724,7 +866,7 @@ export default function PortfolioDashboard() {
                   positions={positions}
                   assetClassMap={assetClassMap}
                   savedTargets={targets}
-                  onSaveTargets={handleSaveTargets}
+                  onSaveTargets={canEdit ? handleSaveTargets : null}
                   livePrices={livePrices}
                 />
               )}
@@ -735,11 +877,12 @@ export default function PortfolioDashboard() {
                 <textarea
                   ref={noteRef}
                   value={noteText}
-                  onChange={handleNoteChange}
-                  onMouseUp={handleNoteResize}
+                  onChange={canEdit ? handleNoteChange : undefined}
+                  onMouseUp={canEdit ? handleNoteResize : undefined}
+                  readOnly={!canEdit}
                   style={{ height: noteHeight }}
-                  className="w-full border border-gray-300 rounded-md p-3 text-sm text-gray-700 resize-y focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
-                  placeholder="Notes on positions and upcoming trades..."
+                  className={`w-full border border-gray-300 rounded-md p-3 text-sm text-gray-700 resize-y focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 ${!canEdit ? 'bg-gray-50 text-gray-500 cursor-default' : ''}`}
+                  placeholder={canEdit ? 'Notes on positions and upcoming trades...' : ''}
                 />
               </div>
             </div>

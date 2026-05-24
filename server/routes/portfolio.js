@@ -7,8 +7,27 @@ const router = express.Router()
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Owner-only access (rename, delete, manage shares)
 function getPortfolio(portfolioId, userId) {
   return db.prepare('SELECT * FROM portfolios WHERE id = ? AND user_id = ?').get(portfolioId, userId)
+}
+
+// Read access: owner OR any share
+function getPortfolioRead(portfolioId, userId) {
+  return db.prepare(`
+    SELECT p.* FROM portfolios p
+    LEFT JOIN portfolio_shares ps ON ps.portfolio_id = p.id AND ps.shared_with_user_id = ?
+    WHERE p.id = ? AND (p.user_id = ? OR ps.id IS NOT NULL)
+  `).get(userId, portfolioId, userId)
+}
+
+// Write access: owner OR share with can_edit = 1
+function getPortfolioWrite(portfolioId, userId) {
+  return db.prepare(`
+    SELECT p.* FROM portfolios p
+    LEFT JOIN portfolio_shares ps ON ps.portfolio_id = p.id AND ps.shared_with_user_id = ?
+    WHERE p.id = ? AND (p.user_id = ? OR (ps.id IS NOT NULL AND ps.can_edit = 1))
+  `).get(userId, portfolioId, userId)
 }
 
 // Parse "$1,234.56" or "-$1,234.56" → number (or null if empty)
@@ -70,12 +89,29 @@ function parseImportDate(rows) {
 // Portfolio CRUD
 // ---------------------------------------------------------------------------
 
-// GET /api/portfolio — list portfolios for the logged-in user
+// GET /api/portfolio — list owned portfolios + shared portfolios
 router.get('/', (req, res) => {
-  const portfolios = db.prepare(
-    'SELECT * FROM portfolios WHERE user_id = ? ORDER BY name'
+  const userId = req.session.userId
+  const owned = db.prepare(
+    "SELECT *, 1 as is_owner, 1 as can_edit, NULL as shared_by_name FROM portfolios WHERE user_id = ? ORDER BY name"
+  ).all(userId)
+  const shared = db.prepare(`
+    SELECT p.*, 0 as is_owner, ps.can_edit, u.name as shared_by_name
+    FROM portfolios p
+    JOIN portfolio_shares ps ON ps.portfolio_id = p.id
+    JOIN users u ON u.id = p.user_id
+    WHERE ps.shared_with_user_id = ?
+    ORDER BY p.name
+  `).all(userId)
+  res.json([...owned, ...shared])
+})
+
+// GET /api/portfolio/shareable-users — users the current user can share portfolios with
+router.get('/shareable-users', (req, res) => {
+  const users = db.prepare(
+    'SELECT id, name, email FROM users WHERE id != ? ORDER BY name'
   ).all(req.session.userId)
-  res.json(portfolios)
+  res.json(users)
 })
 
 // POST /api/portfolio — create a portfolio
@@ -123,7 +159,45 @@ router.delete('/:id', (req, res) => {
     for (const imp of imports) deletePositions.run(imp.id)
     db.prepare('DELETE FROM portfolio_imports WHERE portfolio_id = ?').run(portfolio.id)
     db.prepare('DELETE FROM portfolio_targets WHERE portfolio_id = ?').run(portfolio.id)
+    db.prepare('DELETE FROM portfolio_shares WHERE portfolio_id = ?').run(portfolio.id)
     db.prepare('DELETE FROM portfolios WHERE id = ?').run(portfolio.id)
+  })
+  tx()
+  res.json({ success: true })
+})
+
+// GET /api/portfolio/:id/shares — list shares for a portfolio (owner only)
+router.get('/:id/shares', (req, res) => {
+  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
+  const shares = db.prepare(`
+    SELECT ps.id, ps.shared_with_user_id, ps.can_edit, u.name, u.email
+    FROM portfolio_shares ps
+    JOIN users u ON u.id = ps.shared_with_user_id
+    WHERE ps.portfolio_id = ?
+    ORDER BY u.name
+  `).all(portfolio.id)
+  res.json(shares)
+})
+
+// PUT /api/portfolio/:id/shares — replace all shares for a portfolio (owner only)
+// Body: { shares: [{ user_id, can_edit }] }
+router.put('/:id/shares', (req, res) => {
+  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
+  const { shares } = req.body
+  if (!Array.isArray(shares)) return res.status(400).json({ error: 'shares must be an array' })
+
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM portfolio_shares WHERE portfolio_id = ?').run(portfolio.id)
+    const insert = db.prepare(
+      'INSERT INTO portfolio_shares (portfolio_id, shared_with_user_id, can_edit) VALUES (?, ?, ?)'
+    )
+    for (const s of shares) {
+      if (s.user_id && s.user_id !== req.session.userId) {
+        insert.run(portfolio.id, s.user_id, s.can_edit ? 1 : 0)
+      }
+    }
   })
   tx()
   res.json({ success: true })
@@ -272,7 +346,7 @@ router.delete('/asset-class-map/:id', (req, res) => {
 
 // GET /api/portfolio/:id/imports — list import history
 router.get('/:id/imports', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioRead(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
   const imports = db.prepare(
@@ -359,7 +433,7 @@ function parse529(content, accountName) {
 // Body: { filename: string, content: string, accountName?: string }
 // Supports Fidelity CSV and 529 tab-separated formats (auto-detected).
 router.post('/:id/import', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioWrite(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
   const { filename, content, accountName } = req.body
@@ -452,7 +526,7 @@ router.post('/:id/import', (req, res) => {
 
 // DELETE /api/portfolio/:id/imports/:importId — delete a specific import
 router.delete('/:id/imports/:importId', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioWrite(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
   const imp = db.prepare(
@@ -473,7 +547,7 @@ router.delete('/:id/imports/:importId', (req, res) => {
 // GET /api/portfolio/:id/positions?importId=xxx
 // Returns positions for the latest import (or a specific one via query param)
 router.get('/:id/positions', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioRead(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
   let importId = req.query.importId
@@ -497,7 +571,7 @@ router.get('/:id/positions', (req, res) => {
 
 // GET /api/portfolio/:id/targets
 router.get('/:id/targets', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioRead(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
   const targets = db.prepare(
@@ -509,7 +583,7 @@ router.get('/:id/targets', (req, res) => {
 // PUT /api/portfolio/:id/targets — replace all targets for a portfolio
 // Body: { targets: [{ asset_class, style, target_percent }] }
 router.put('/:id/targets', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioWrite(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
   const { targets } = req.body
@@ -597,7 +671,7 @@ function parseHistoryCSV(text, fallbackAccountNumber) {
 // Auto-detects single-account (account from filename) vs multi-account (account from data)
 // Replaces all previous history for each account present in the file
 router.post('/:id/history', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioWrite(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
   const { filename, csv } = req.body
@@ -656,7 +730,7 @@ router.post('/:id/history', (req, res) => {
 // GET /api/portfolio/:id/history/last-transactions
 // Returns { [accountNumber]: { [symbol]: { lastBuy, lastSell } } }
 router.get('/:id/history/last-transactions', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioRead(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
   const rows = db.prepare(`
@@ -679,7 +753,7 @@ router.get('/:id/history/last-transactions', (req, res) => {
 
 // GET /api/portfolio/:id/history/accounts — list accounts with imported history
 router.get('/:id/history/accounts', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioRead(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
 
   const rows = db.prepare(`
@@ -698,14 +772,14 @@ router.get('/:id/history/accounts', (req, res) => {
 
 // GET /api/portfolio/:id/notes
 router.get('/:id/notes', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioRead(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
   res.json({ notes: portfolio.notes || '' })
 })
 
 // PUT /api/portfolio/:id/notes — body: { notes: string }
 router.put('/:id/notes', (req, res) => {
-  const portfolio = getPortfolio(req.params.id, req.session.userId)
+  const portfolio = getPortfolioWrite(req.params.id, req.session.userId)
   if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
   const { notes } = req.body
   if (typeof notes !== 'string') return res.status(400).json({ error: 'notes must be a string' })

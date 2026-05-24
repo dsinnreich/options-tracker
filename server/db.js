@@ -441,6 +441,22 @@ const migrations = [
       console.log('✅ Migrated to version 12: Added global_asset_class_map table')
     }
   },
+  {
+    version: 13,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS portfolio_shares (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+          shared_with_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          can_edit INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(portfolio_id, shared_with_user_id)
+        )
+      `)
+      console.log('✅ Migrated to version 13: Added portfolio_shares table')
+    }
+  },
 ]
 
 // Run pending migrations
