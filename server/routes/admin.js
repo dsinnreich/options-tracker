@@ -16,7 +16,7 @@ function requireAdmin(req, res, next) {
 // Middleware to require fresh admin step-up verification (TOTP re-verify within last hour)
 function requireAdminVerified(req, res, next) {
   const { adminVerifiedAt } = req.session
-  if (!adminVerifiedAt || Date.now() - adminVerifiedAt > 3600000) {
+  if (!adminVerifiedAt || Date.now() - adminVerifiedAt > 7 * 24 * 60 * 60 * 1000) {
     return res.status(403).json({ error: 'admin_verify_required' })
   }
   next()
