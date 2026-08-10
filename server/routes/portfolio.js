@@ -597,9 +597,8 @@ router.get('/:id/allocation-export', (req, res) => {
 
   const LIQUIDITY_SYMBOLS = new Set(['FDRXX', 'SPAXX', 'CORE', 'FDIC', 'PENDING ACTIVITY'])
 
-  // Aggregate value per symbol (across accounts) and asset_class|style
-  const bySymbol = {}
-  const byStyle = {}
+  // Aggregate value per asset_class -> style -> symbol (across accounts)
+  const groups = {}
   let grandTotal = 0
 
   for (const pos of positions) {
@@ -616,37 +615,41 @@ router.get('/:id/allocation-export', (req, res) => {
     const isPending = lookupSym === 'PENDING ACTIVITY'
     const description = isPending ? 'Pending Activity' : (mapping?.investment_name || pos.description || sym)
 
-    if (!bySymbol[sym]) bySymbol[sym] = { description, asset_class: assetClass, style, value: 0 }
-    bySymbol[sym].value += val
-
-    const styleKey = `${assetClass}|${style}`
-    if (!byStyle[styleKey]) byStyle[styleKey] = { asset_class: assetClass, style, value: 0 }
-    byStyle[styleKey].value += val
+    if (!groups[assetClass]) groups[assetClass] = {}
+    if (!groups[assetClass][style]) groups[assetClass][style] = {}
+    if (!groups[assetClass][style][sym]) groups[assetClass][style][sym] = { description, value: 0 }
+    groups[assetClass][style][sym].value += val
   }
 
   const pct = (v) => (grandTotal > 0 ? (v / grandTotal) * 100 : 0)
 
-  const styleRows = Object.values(byStyle)
-    .map(r => ({ ...r, pct: pct(r.value) }))
-    .sort((a, b) => b.pct - a.pct)
-
-  const holdingRows = Object.entries(bySymbol)
-    .map(([symbol, r]) => ({ symbol, ...r, pct: pct(r.value) }))
-    .sort((a, b) => b.pct - a.pct)
+  // Build asset_class -> style -> holdings tree, each level sorted by % descending
+  const assetClasses = Object.entries(groups).map(([assetClass, styles]) => {
+    let acValue = 0
+    const styleRows = Object.entries(styles).map(([style, holdings]) => {
+      let styleValue = 0
+      const holdingRows = Object.entries(holdings).map(([symbol, h]) => {
+        styleValue += h.value
+        return { symbol, description: h.description, pct: pct(h.value) }
+      }).sort((a, b) => b.pct - a.pct)
+      acValue += styleValue
+      return { style, pct: pct(styleValue), holdings: holdingRows }
+    }).sort((a, b) => b.pct - a.pct)
+    return { assetClass, pct: pct(acValue), styles: styleRows }
+  }).sort((a, b) => b.pct - a.pct)
 
   const csvEscape = (s) => `"${String(s).replace(/"/g, '""')}"`
 
   const lines = []
-  lines.push('Allocation by Asset Class / Style')
-  lines.push('Asset Class,Style,% of Portfolio')
-  for (const r of styleRows) {
-    lines.push(`${csvEscape(r.asset_class)},${csvEscape(r.style)},${r.pct.toFixed(2)}%`)
-  }
-  lines.push('')
-  lines.push('Allocation by Holding')
-  lines.push('Symbol,Description,Asset Class,Style,% of Portfolio')
-  for (const r of holdingRows) {
-    lines.push(`${csvEscape(r.symbol)},${csvEscape(r.description)},${csvEscape(r.asset_class)},${csvEscape(r.style)},${r.pct.toFixed(2)}%`)
+  lines.push('Asset Class,Style,Symbol,Description,% of Portfolio')
+  for (const ac of assetClasses) {
+    lines.push(`${csvEscape(ac.assetClass)},,,,${ac.pct.toFixed(2)}%`)
+    for (const s of ac.styles) {
+      lines.push(`,${csvEscape(s.style)},,,${s.pct.toFixed(2)}%`)
+      for (const h of s.holdings) {
+        lines.push(`,,${csvEscape(h.symbol)},${csvEscape(h.description)},${h.pct.toFixed(2)}%`)
+      }
+    }
   }
 
   const csv = lines.join('\r\n')
