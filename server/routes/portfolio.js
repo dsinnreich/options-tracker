@@ -571,6 +571,92 @@ router.get('/:id/positions', (req, res) => {
   res.json(positions)
 })
 
+// GET /api/portfolio/:id/allocation-export — download a percent-only allocation
+// breakdown (style + individual holdings) as CSV. No dollar amounts included —
+// safe to share with people you don't want to see your account value.
+router.get('/:id/allocation-export', (req, res) => {
+  const portfolio = getPortfolioRead(req.params.id, req.session.userId)
+  if (!portfolio) return res.status(404).json({ error: 'Portfolio not found' })
+
+  const latest = db.prepare(
+    'SELECT id FROM portfolio_imports WHERE portfolio_id = ? ORDER BY import_date DESC LIMIT 1'
+  ).get(portfolio.id)
+  if (!latest) return res.status(400).json({ error: 'No holdings imported yet' })
+
+  const positions = db.prepare(
+    'SELECT * FROM portfolio_positions WHERE import_id = ?'
+  ).all(latest.id)
+
+  const userMappings = db.prepare(
+    'SELECT * FROM asset_class_map WHERE user_id = ?'
+  ).all(portfolio.user_id)
+  const globalMappings = db.prepare('SELECT * FROM global_asset_class_map').all()
+  const mapBySymbol = {}
+  for (const g of globalMappings) mapBySymbol[g.symbol.toUpperCase()] = g
+  for (const m of userMappings) mapBySymbol[m.symbol.toUpperCase()] = m // user overrides win
+
+  const LIQUIDITY_SYMBOLS = new Set(['FDRXX', 'SPAXX', 'CORE', 'FDIC', 'PENDING ACTIVITY'])
+
+  // Aggregate value per symbol (across accounts) and asset_class|style
+  const bySymbol = {}
+  const byStyle = {}
+  let grandTotal = 0
+
+  for (const pos of positions) {
+    const sym = (pos.symbol || '').trim()
+    if (!sym) continue
+    const val = pos.current_value || 0
+    grandTotal += val
+
+    const lookupSym = sym.replace(/\*+$/, '').toUpperCase()
+    const mapping = mapBySymbol[lookupSym]
+    const isLiquidityDefault = !mapping && LIQUIDITY_SYMBOLS.has(lookupSym)
+    const assetClass = mapping ? mapping.asset_class : (isLiquidityDefault ? 'Liquidity' : 'Unmapped')
+    const style = mapping ? mapping.style : (isLiquidityDefault ? 'Cash' : 'Unmapped')
+    const isPending = lookupSym === 'PENDING ACTIVITY'
+    const description = isPending ? 'Pending Activity' : (mapping?.investment_name || pos.description || sym)
+
+    if (!bySymbol[sym]) bySymbol[sym] = { description, asset_class: assetClass, style, value: 0 }
+    bySymbol[sym].value += val
+
+    const styleKey = `${assetClass}|${style}`
+    if (!byStyle[styleKey]) byStyle[styleKey] = { asset_class: assetClass, style, value: 0 }
+    byStyle[styleKey].value += val
+  }
+
+  const pct = (v) => (grandTotal > 0 ? (v / grandTotal) * 100 : 0)
+
+  const styleRows = Object.values(byStyle)
+    .map(r => ({ ...r, pct: pct(r.value) }))
+    .sort((a, b) => b.pct - a.pct)
+
+  const holdingRows = Object.entries(bySymbol)
+    .map(([symbol, r]) => ({ symbol, ...r, pct: pct(r.value) }))
+    .sort((a, b) => b.pct - a.pct)
+
+  const csvEscape = (s) => `"${String(s).replace(/"/g, '""')}"`
+
+  const lines = []
+  lines.push('Allocation by Asset Class / Style')
+  lines.push('Asset Class,Style,% of Portfolio')
+  for (const r of styleRows) {
+    lines.push(`${csvEscape(r.asset_class)},${csvEscape(r.style)},${r.pct.toFixed(2)}%`)
+  }
+  lines.push('')
+  lines.push('Allocation by Holding')
+  lines.push('Symbol,Description,Asset Class,Style,% of Portfolio')
+  for (const r of holdingRows) {
+    lines.push(`${csvEscape(r.symbol)},${csvEscape(r.description)},${csvEscape(r.asset_class)},${csvEscape(r.style)},${r.pct.toFixed(2)}%`)
+  }
+
+  const csv = lines.join('\r\n')
+  const safeName = portfolio.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+  const date = new Date().toISOString().split('T')[0]
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}-allocation-${date}.csv"`)
+  res.setHeader('Content-Type', 'text/csv')
+  res.send(csv)
+})
+
 // ---------------------------------------------------------------------------
 // Targets
 // ---------------------------------------------------------------------------

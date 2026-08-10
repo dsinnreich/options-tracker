@@ -81,6 +81,12 @@ function Admin() {
   // Global asset class map
   const [globalMap, setGlobalMap] = useState([])
 
+  // Allocation share export
+  const [portfolios, setPortfolios] = useState([])
+  const [allocationPortfolioId, setAllocationPortfolioId] = useState('')
+  const [allocationLoading, setAllocationLoading] = useState(false)
+  const [allocationError, setAllocationError] = useState(null)
+
   // Backup
   const [dbStats, setDbStats] = useState(null)
   const [backupLoading, setBackupLoading] = useState(false)
@@ -133,6 +139,17 @@ function Admin() {
     } catch {}
   }, [])
 
+  const fetchPortfolios = useCallback(async () => {
+    try {
+      const res = await fetch('/api/portfolio', { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        setPortfolios(data)
+        setAllocationPortfolioId(prev => prev || (data[0]?.id ?? ''))
+      }
+    } catch {}
+  }, [])
+
   const fetchSecurity = useCallback(async () => {
     setSecurityLoading(true)
     const [histResult, devResult] = await Promise.all([fetchLoginHistory(), fetchTrustedDevices()])
@@ -152,8 +169,9 @@ function Admin() {
       fetchStats()
       fetchSecurity()
       fetchGlobalMap()
+      fetchPortfolios()
     }
-  }, [isAdmin, fetchUsers, fetchStats, fetchSecurity, fetchGlobalMap])
+  }, [isAdmin, fetchUsers, fetchStats, fetchSecurity, fetchGlobalMap, fetchPortfolios])
 
   // Re-load after step-up
   useEffect(() => {
@@ -189,6 +207,30 @@ function Admin() {
       setBackupError(err.message)
     } finally {
       setBackupLoading(false)
+    }
+  }
+
+  const handleAllocationDownload = async () => {
+    if (!allocationPortfolioId) return
+    setAllocationLoading(true)
+    setAllocationError(null)
+    try {
+      const res = await fetch(`/api/portfolio/${allocationPortfolioId}/allocation-export`, { credentials: 'include' })
+      if (!res.ok) throw new Error((await res.json()).error || 'Download failed')
+      const disposition = res.headers.get('Content-Disposition') || ''
+      const match = disposition.match(/filename="([^"]+)"/)
+      const filename = match ? match[1] : 'allocation.csv'
+      const blob = await res.blob()
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(href)
+    } catch (err) {
+      setAllocationError(err.message)
+    } finally {
+      setAllocationLoading(false)
     }
   }
 
@@ -650,6 +692,39 @@ function Admin() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* ── Share Allocation ── */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Share Allocation</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Download a CSV with your portfolio's allocation by asset class/style and by individual holding,
+            as percentages only — no dollar amounts. Safe to share with friends or family.
+          </p>
+
+          {allocationError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">{allocationError}</div>
+          )}
+
+          <div className="flex items-center gap-3">
+            <select
+              value={allocationPortfolioId}
+              onChange={(e) => setAllocationPortfolioId(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            >
+              {portfolios.length === 0 && <option value="">No portfolios</option>}
+              {portfolios.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleAllocationDownload}
+              disabled={allocationLoading || !allocationPortfolioId}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+            >
+              {allocationLoading ? 'Preparing…' : 'Download Allocation CSV'}
+            </button>
           </div>
         </div>
 
