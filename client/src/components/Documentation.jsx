@@ -335,6 +335,76 @@ function Documentation() {
             </div>
           </div>
         </AccordionSection>
+
+        {/* Portfolio Risk & Return */}
+        <AccordionSection id="portfolio-risk" title="Portfolio Risk & Return (Analysis Tab)" icon="📈">
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              The Analysis tab shows your portfolio's overall Std Dev and Sharpe Ratio, and lets you
+              model a What-If reallocation to see how those metrics would change.
+            </p>
+
+            <Formula
+              title="Portfolio Standard Deviation"
+              formula="σₚ = √( Σᵢ Σⱼ wᵢ wⱼ σᵢ σⱼ ρᵢⱼ )"
+              description="Not a weighted average of holding standard deviations — that shortcut only holds if every pairwise correlation were 1.0 (zero diversification benefit), and it overstates risk. The real formula needs every pairwise correlation ρᵢⱼ between holdings, which is why this app fetches a correlation matrix rather than just averaging."
+            />
+            <Formula
+              title="Sharpe Ratio"
+              formula="Sharpe = (Return − Risk-Free Rate) ÷ σₚ"
+              description="Return is the value-weighted 3Y return across holdings. Risk-Free Rate is the field you set at the top of the panel."
+            />
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Where the numbers come from</div>
+              <ul className="text-sm text-gray-700 space-y-1">
+                <li>• <strong>σ (Std Dev)</strong> and <strong>Return</strong> per holding — Morningstar's trailing 3-year figures, from the research watchlist selected at the top of the tab</li>
+                <li>• <strong>ρ (correlation)</strong> between holdings — computed from 1 year of daily price history where available; falls back per-pair to a single-factor S&amp;P 500 proxy (based on downside capture ratio) for any pair missing price history</li>
+                <li>• <strong>Cash &amp; Liquidity</strong> holdings are treated as risk-free: zero volatility, earning the risk-free rate</li>
+              </ul>
+            </div>
+
+            <div className="bg-amber-50 rounded-md p-4 border border-amber-200">
+              <div className="font-semibold text-amber-900 mb-1">⚠️ These are ex-post (historical) figures, not a forecast</div>
+              <div className="text-sm text-gray-700">
+                Every input — the 3Y std dev, the 3Y return, and the 1-year price correlations — is a
+                trailing, realized statistic. Nothing here is modeled or forecasted. The What-If tool
+                answers <em>"what would my risk and return have been at these weights, over this
+                trailing window?"</em> — not <em>"what will they be going forward."</em> A large regime
+                shift (rate cycle, market correction) can make trailing figures a poor guide to what's
+                ahead. The one exception is the Risk-Free Rate field, which is a current-rate
+                assumption you set yourself rather than a historical figure.
+              </div>
+            </div>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Using What-If Weights</div>
+              <ol className="text-sm text-gray-700 space-y-1 list-decimal ml-4">
+                <li>Click <strong>What-If Weights</strong></li>
+                <li>Edit the target percentage for any Asset Class · Style bucket — holdings within a bucket keep their current relative mix, so only the blend across buckets changes</li>
+                <li>The total must equal <strong>100%</strong></li>
+                <li>The Std Dev, Sharpe, and Return tiles show current → proposed, with the change highlighted green when it's an improvement</li>
+                <li>Click <strong>Reset</strong> to return targets to current weights, or <strong>Exit What-If</strong> to leave the editor</li>
+              </ol>
+              <p className="text-sm text-gray-600 mt-2">
+                This is a separate, unsaved what-if from the Target % editor on the By Asset Class
+                tab — exiting here doesn't affect your saved targets there.
+              </p>
+            </div>
+
+            <div className="bg-blue-50 rounded-md p-4 border border-blue-200">
+              <div className="font-semibold text-blue-900 mb-1">ℹ️ Coverage warnings</div>
+              <div className="text-sm text-gray-700">
+                If a holding is missing from the calculation, an amber note explains why — and the two
+                causes need different fixes. <strong>"No row in the [watchlist] watchlist"</strong> means
+                that ticker isn't in the research watchlist currently selected at the top of the tab;
+                switch watchlists or add the symbol to it. <strong>"In the watchlist but missing Std Dev
+                or 3Y Return"</strong> means the ticker has a research row, but Morningstar didn't report
+                those fields (common for very new funds without 3 years of history).
+              </div>
+            </div>
+          </div>
+        </AccordionSection>
       </div>
 
       {/* Options Tracker */}

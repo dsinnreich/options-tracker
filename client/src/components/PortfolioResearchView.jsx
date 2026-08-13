@@ -1,4 +1,6 @@
 import { useState, useMemo, useRef, useCallback } from 'react'
+import usePortfolioRisk from '../hooks/usePortfolioRisk'
+import PortfolioRiskPanel from './PortfolioRiskPanel'
 
 // --- Formatters ---
 const fmtPct = (n) => {
@@ -167,6 +169,18 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
 
   const pivot = useMemo(() => buildPivot(positions, assetClassMap), [positions, assetClassMap])
 
+  const risk = usePortfolioRisk(pivot, researchByTicker, proxyBySymbol)
+  const { riskByGroup, current: portfolioRisk } = risk
+
+  // Std Dev and Sharpe are not linear in weights, so the value-weighted average
+  // used for the return columns is wrong for them — it implies every pairwise
+  // correlation is 1.0. Aggregate rows get the correlation-adjusted figures instead.
+  const withPortfolioRisk = (research, groupRisk) => ({
+    ...research,
+    std_dev_3y: groupRisk?.std != null ? groupRisk.std * 100 : null,
+    sharpe_ratio_3y: groupRisk?.sharpe ?? null,
+  })
+
   const isACExpanded = (ac) => expandedAC[ac] !== undefined ? expandedAC[ac] : true
   const isStyleExpanded = (ac, style) => {
     const key = `${ac}|${style}`
@@ -185,11 +199,17 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
     const result = []
     for (const acRow of assetClasses) {
       const acExpanded = isACExpanded(acRow.asset_class)
-      const acResearch = weightedResearch(acRow.allHoldings, researchByTicker, proxyBySymbol)
+      const acResearch = withPortfolioRisk(
+        weightedResearch(acRow.allHoldings, researchByTicker, proxyBySymbol),
+        riskByGroup.byAssetClass[acRow.asset_class]
+      )
       if (acExpanded) {
         for (const sRow of acRow.children) {
           const styleExpanded = isStyleExpanded(acRow.asset_class, sRow.style)
-          const styleResearch = weightedResearch(sRow.children, researchByTicker, proxyBySymbol)
+          const styleResearch = withPortfolioRisk(
+            weightedResearch(sRow.children, researchByTicker, proxyBySymbol),
+            riskByGroup.byStyle[`${acRow.asset_class}|${sRow.style}`]
+          )
           if (styleExpanded) {
             for (const hRow of sRow.children) {
               result.push({ type: 'holding', acRow, sRow, hRow })
@@ -202,10 +222,16 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
     }
     // Grand total research = weighted average across everything
     const allHoldings = assetClasses.flatMap(ac => ac.allHoldings)
-    result.push({ type: 'grand_total', grandResearch: weightedResearch(allHoldings, researchByTicker, proxyBySymbol) })
+    result.push({
+      type: 'grand_total',
+      grandResearch: withPortfolioRisk(
+        weightedResearch(allHoldings, researchByTicker, proxyBySymbol),
+        portfolioRisk
+      ),
+    })
     return result
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pivot, expandedAC, expandedStyles, researchByTicker, proxyBySymbol])
+  }, [pivot, expandedAC, expandedStyles, researchByTicker, proxyBySymbol, riskByGroup, portfolioRisk])
 
   function researchColor(col, val) {
     if (!col.color || val == null) return ''
@@ -237,6 +263,8 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
           : <span className="text-amber-600">No research data available — import a Morningstar XLSX in the ETF Research tab to populate stats.</span>
         }
       </div>
+
+      <PortfolioRiskPanel risk={risk} researchWatchlist={researchWatchlist} />
 
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="text-sm w-full" style={{ borderCollapse: 'collapse', tableLayout: 'auto' }}>
@@ -345,7 +373,9 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
       </div>
 
       <p className="text-sm text-gray-400 mt-2">
-        Stats from Morningstar. Std Dev, Sharpe, Alpha are 3Y monthly. Aggregate rows show value-weighted averages.
+        Stats from Morningstar. Std Dev, Sharpe, Alpha are 3Y monthly. Aggregate rows show
+        value-weighted averages, except Std Dev and Sharpe — those are correlation-adjusted, so a
+        subtotal reads below the weighted average of its holdings by the diversification benefit.
       </p>
     </div>
   )

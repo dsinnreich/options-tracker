@@ -1,3 +1,5 @@
+import { portfolioVariance } from './portfolioRisk'
+
 const N_SIMULATIONS = 5000
 const N_FRONTIER = 10
 const N_BG_DISPLAY = 300
@@ -20,15 +22,36 @@ export function buildProxyCorrMatrix(etfs) {
   )
 }
 
-function portfolioStats(weights, returns, stdDevs, corrMatrix, riskFreeRate) {
-  const ret = weights.reduce((sum, w, i) => sum + w * returns[i], 0)
-  let variance = 0
-  for (let i = 0; i < weights.length; i++) {
-    for (let j = 0; j < weights.length; j++) {
-      variance += weights[i] * weights[j] * stdDevs[i] * stdDevs[j] * corrMatrix[i][j]
+// Divide the sampled return range into nFrontier slices and keep the
+// minimum-std portfolio from each — the efficient edge of the cloud.
+// Shared by the unconstrained (watchlist) and bounded (portfolio) frontiers.
+function extractFrontier(all, nFrontier) {
+  const rets = all.map(s => s.ret)
+  const minRet = Math.min(...rets)
+  const maxRet = Math.max(...rets)
+  const range = maxRet - minRet
+
+  let frontier = []
+  if (range < 0.001) {
+    frontier = [...all].sort((a, b) => a.std - b.std).slice(0, nFrontier)
+  } else {
+    const step = range / nFrontier
+    for (let b = 0; b < nFrontier; b++) {
+      const lo = minRet + b * step
+      const hi = lo + step + (b === nFrontier - 1 ? 1e-6 : 0)
+      const bucket = all.filter(s => s.ret >= lo && s.ret < hi)
+      if (bucket.length > 0) {
+        frontier.push(bucket.reduce((best, p) => (p.std < best.std ? p : best)))
+      }
     }
   }
-  const std = Math.sqrt(Math.max(0, variance))
+
+  return frontier.sort((a, b) => a.ret - b.ret)
+}
+
+function portfolioStats(weights, returns, stdDevs, corrMatrix, riskFreeRate) {
+  const ret = weights.reduce((sum, w, i) => sum + w * returns[i], 0)
+  const std = Math.sqrt(Math.max(0, portfolioVariance(weights, stdDevs, corrMatrix)))
   const sharpe = std > 0 ? (ret - riskFreeRate) / std : 0
   return { ret, std, sharpe }
 }
@@ -58,29 +81,7 @@ export function computeEfficientFrontier(etfs, returnField, riskFreeRate, corrMa
     all.push({ weights: w, ...simulate(w) })
   })
 
-  // Efficient frontier: divide return range into N_FRONTIER buckets,
-  // select the minimum-std portfolio from each bucket
-  const rets = all.map(s => s.ret)
-  const minRet = Math.min(...rets)
-  const maxRet = Math.max(...rets)
-  const range = maxRet - minRet
-
-  let frontier = []
-  if (range < 0.001) {
-    frontier = [...all].sort((a, b) => a.std - b.std).slice(0, N_FRONTIER)
-  } else {
-    const step = range / N_FRONTIER
-    for (let b = 0; b < N_FRONTIER; b++) {
-      const lo = minRet + b * step
-      const hi = lo + step + (b === N_FRONTIER - 1 ? 1e-6 : 0)
-      const bucket = all.filter(s => s.ret >= lo && s.ret < hi)
-      if (bucket.length > 0) {
-        frontier.push(bucket.reduce((best, p) => (p.std < best.std ? p : best)))
-      }
-    }
-  }
-
-  frontier.sort((a, b) => a.ret - b.ret)
+  const frontier = extractFrontier(all, N_FRONTIER)
 
   // Sample background points for the scatter cloud (excludes frontier portfolios)
   const frontierKeys = new Set(frontier.map(p => p.weights.map(w => w.toFixed(4)).join(',')))
@@ -90,4 +91,138 @@ export function computeEfficientFrontier(etfs, returnField, riskFreeRate, corrMa
     .slice(0, N_BG_DISPLAY)
 
   return { frontier, background }
+}
+
+// --- Bounded frontier (portfolio Analysis tab) -----------------------------
+
+// The Pareto-efficient set for (maximize return, minimize std): sort by std
+// ascending and keep each portfolio whose return beats everything cheaper.
+//
+// Used instead of extractFrontier for the bounded frontier because it fixes two
+// problems at once. Return-slicing keeps the minimum-std sample per slice, but
+// that minimum is a noisy Monte Carlo estimate — an under-sampled slice leaves a
+// visible dip where the curve doubles back. It also returns the bottom half of
+// the bullet (portfolios below minimum variance, strictly dominated). Pareto
+// filtering excludes both by construction: std and return rise together, and
+// every point returned is genuinely worth considering.
+function paretoFrontier(all, nFrontier) {
+  const sorted = [...all].sort((a, b) => a.std - b.std || b.ret - a.ret)
+  const efficient = []
+  let bestRet = -Infinity
+  for (const p of sorted) {
+    if (p.ret > bestRet + 1e-12) {
+      efficient.push(p)
+      bestRet = p.ret
+    }
+  }
+  if (efficient.length <= nFrontier) return efficient
+
+  // Thin evenly along the curve, keeping both endpoints.
+  const picked = new Set()
+  for (let i = 0; i < nFrontier; i++) {
+    picked.add(efficient[Math.round((i * (efficient.length - 1)) / (nFrontier - 1))])
+  }
+  return [...picked]
+}
+
+// Uniform-ish draw from the polytope { lo <= w <= hi, sum(w) = 1 }.
+//
+// Assigns buckets one at a time in random order. Before each draw, the feasible
+// range for w_k is narrowed by what the *remaining* buckets can still absorb,
+// so every draw completes at exactly 1.0 — no rejection loop, no renormalizing
+// (which would break the bounds). Random ordering keeps the first bucket in the
+// list from soaking up the slack every time.
+//
+// Requires sum(lo) <= 1 <= sum(hi); callers derive bounds from current weights
+// (which sum to 1), so that always holds.
+export function randomBoundedWeights(lo, hi) {
+  const K = lo.length
+  const order = Array.from({ length: K }, (_, i) => i)
+  for (let i = K - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[order[i], order[j]] = [order[j], order[i]]
+  }
+
+  // Suffix sums of the bounds, in visit order.
+  const suffixLo = new Array(K + 1).fill(0)
+  const suffixHi = new Array(K + 1).fill(0)
+  for (let t = K - 1; t >= 0; t--) {
+    suffixLo[t] = suffixLo[t + 1] + lo[order[t]]
+    suffixHi[t] = suffixHi[t + 1] + hi[order[t]]
+  }
+
+  const w = new Array(K).fill(0)
+  let assigned = 0
+  for (let t = 0; t < K; t++) {
+    const k = order[t]
+    const remaining = 1 - assigned
+    const min = Math.max(lo[k], remaining - suffixHi[t + 1])
+    const max = Math.min(hi[k], remaining - suffixLo[t + 1])
+    w[k] = max > min ? min + Math.random() * (max - min) : min
+    assigned += w[k]
+  }
+  return w
+}
+
+// Greedy fill: pour weight into buckets ordered by `rank` (best first), taking
+// each to its ceiling until the budget runs out. Produces the exact bounded
+// max-return and min-volatility corners, so the frontier's endpoints are real
+// rather than whatever the random draws happened to reach.
+function greedyBounded(lo, hi, rank) {
+  const w = [...lo]
+  let budget = 1 - lo.reduce((a, b) => a + b, 0)
+  for (const k of rank) {
+    if (budget <= 1e-12) break
+    const room = Math.min(hi[k] - lo[k], budget)
+    w[k] += room
+    budget -= room
+  }
+  return w
+}
+
+// Efficient frontier over pre-aggregated assets (portfolio buckets), with each
+// weight constrained to [lo, hi]. Unlike computeEfficientFrontier this takes raw
+// arrays rather than ETF records, since buckets are synthetic assets.
+// All values decimal. Returns { frontier, background, current }.
+export function computeBoundedFrontier({
+  returns, stdDevs, corrMatrix, lo, hi, riskFreeRate,
+  currentWeights = null, nFrontier = 50, nSimulations = 40000,
+}) {
+  // 40k draws is tuned against the band slider, which recomputes on every drag
+  // step: it yields ~46 of the 50 requested points in ~45ms. 80k reaches a full
+  // 50 but takes ~95ms — visibly janky while dragging. Point count is a cap, not
+  // a quota; it also falls naturally when a narrow band leaves fewer genuinely
+  // distinct efficient portfolios to find.
+  const K = returns.length
+  if (K === 0) return { frontier: [], background: [], current: null }
+
+  const simulate = weights => ({
+    weights, ...portfolioStats(weights, returns, stdDevs, corrMatrix, riskFreeRate),
+  })
+
+  if (K === 1) {
+    const only = simulate([1])
+    return { frontier: [only], background: [], current: only }
+  }
+
+  const all = []
+  for (let i = 0; i < nSimulations; i++) all.push(simulate(randomBoundedWeights(lo, hi)))
+
+  // Anchor the endpoints: highest-return and lowest-volatility bounded corners.
+  const byReturn = Array.from({ length: K }, (_, i) => i).sort((a, b) => returns[b] - returns[a])
+  const byRisk = Array.from({ length: K }, (_, i) => i).sort((a, b) => stdDevs[a] - stdDevs[b])
+  all.push(simulate(greedyBounded(lo, hi, byReturn)))
+  all.push(simulate(greedyBounded(lo, hi, byRisk)))
+
+  const current = currentWeights ? simulate(currentWeights) : null
+  if (current) all.push(current)
+
+  const frontier = paretoFrontier(all, nFrontier)
+  const frontierSet = new Set(frontier)
+  const background = all
+    .filter(p => !frontierSet.has(p))
+    .sort(() => Math.random() - 0.5)
+    .slice(0, N_BG_DISPLAY)
+
+  return { frontier, background, current }
 }
