@@ -50,6 +50,8 @@ temp/
 # Backup files
 *.backup
 backup-*.db
+tracker-backup-*.db
+tracker-backup-*.json
 
 # macOS App bundles (local only)
 *.app/
