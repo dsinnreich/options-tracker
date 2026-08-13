@@ -129,6 +129,53 @@ router.post('/', (req, res) => {
   }
 })
 
+// --- Capital market assumptions (per user, not per portfolio) --------------
+// NOTE: these must stay above the '/:id' routes below. Express matches in
+// registration order, so a later router.put('/cma') would be swallowed by
+// router.put('/:id') with id = "cma".
+
+// GET /api/portfolio/cma — the current user's expected returns
+router.get('/cma', (req, res) => {
+  const rows = db.prepare(
+    'SELECT asset_class, style, expected_return FROM capital_market_assumptions WHERE user_id = ? ORDER BY asset_class, style'
+  ).all(req.session.userId)
+  res.json(rows)
+})
+
+// PUT /api/portfolio/cma — replace the full set for the current user
+// Body: { assumptions: [{ asset_class, style, expected_return }] }
+router.put('/cma', (req, res) => {
+  const { assumptions } = req.body
+  if (!Array.isArray(assumptions)) {
+    return res.status(400).json({ error: 'assumptions must be an array' })
+  }
+
+  const clean = []
+  for (const a of assumptions) {
+    const ret = Number(a?.expected_return)
+    if (!a?.asset_class || !a?.style || !isFinite(ret)) continue
+    // Guard against a fat-fingered entry becoming a permanent stored value.
+    if (ret < -100 || ret > 100) {
+      return res.status(400).json({ error: `expected_return out of range for ${a.asset_class} / ${a.style}` })
+    }
+    clean.push({ asset_class: String(a.asset_class), style: String(a.style), expected_return: ret })
+  }
+
+  const insert = db.prepare(
+    'INSERT INTO capital_market_assumptions (user_id, asset_class, style, expected_return) VALUES (?, ?, ?, ?)'
+  )
+  db.transaction(() => {
+    db.prepare('DELETE FROM capital_market_assumptions WHERE user_id = ?').run(req.session.userId)
+    for (const a of clean) {
+      insert.run(req.session.userId, a.asset_class, a.style, a.expected_return)
+    }
+  })()
+
+  res.json(db.prepare(
+    'SELECT asset_class, style, expected_return FROM capital_market_assumptions WHERE user_id = ? ORDER BY asset_class, style'
+  ).all(req.session.userId))
+})
+
 // PUT /api/portfolio/:id — rename a portfolio
 router.put('/:id', (req, res) => {
   const portfolio = getPortfolio(req.params.id, req.session.userId)

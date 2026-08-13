@@ -125,6 +125,21 @@ function paretoFrontier(all, nFrontier) {
   return [...picked]
 }
 
+// Deterministic PRNG (mulberry32). The bounded frontier recomputes reactively —
+// on every risk-free-rate keystroke, band drag, and assumption edit — so drawing
+// from Math.random() would resample 40k portfolios each time and visibly reshape
+// the curve even when nothing about the inputs changed. Seeding makes the
+// frontier a pure function of its inputs: same portfolio, same curve.
+function makeRng(seed) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6D2B79F5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
 // Uniform-ish draw from the polytope { lo <= w <= hi, sum(w) = 1 }.
 //
 // Assigns buckets one at a time in random order. Before each draw, the feasible
@@ -135,11 +150,11 @@ function paretoFrontier(all, nFrontier) {
 //
 // Requires sum(lo) <= 1 <= sum(hi); callers derive bounds from current weights
 // (which sum to 1), so that always holds.
-export function randomBoundedWeights(lo, hi) {
+export function randomBoundedWeights(lo, hi, rng = Math.random) {
   const K = lo.length
   const order = Array.from({ length: K }, (_, i) => i)
   for (let i = K - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
+    const j = Math.floor(rng() * (i + 1))
     ;[order[i], order[j]] = [order[j], order[i]]
   }
 
@@ -158,7 +173,7 @@ export function randomBoundedWeights(lo, hi) {
     const remaining = 1 - assigned
     const min = Math.max(lo[k], remaining - suffixHi[t + 1])
     const max = Math.min(hi[k], remaining - suffixLo[t + 1])
-    w[k] = max > min ? min + Math.random() * (max - min) : min
+    w[k] = max > min ? min + rng() * (max - min) : min
     assigned += w[k]
   }
   return w
@@ -186,7 +201,7 @@ function greedyBounded(lo, hi, rank) {
 // All values decimal. Returns { frontier, background, current }.
 export function computeBoundedFrontier({
   returns, stdDevs, corrMatrix, lo, hi, riskFreeRate,
-  currentWeights = null, nFrontier = 50, nSimulations = 40000,
+  currentWeights = null, nFrontier = 50, nSimulations = 40000, seed = 0x5EEDBEEF,
 }) {
   // 40k draws is tuned against the band slider, which recomputes on every drag
   // step: it yields ~46 of the 50 requested points in ~45ms. 80k reaches a full
@@ -205,8 +220,9 @@ export function computeBoundedFrontier({
     return { frontier: [only], background: [], current: only }
   }
 
+  const rng = makeRng(seed)
   const all = []
-  for (let i = 0; i < nSimulations; i++) all.push(simulate(randomBoundedWeights(lo, hi)))
+  for (let i = 0; i < nSimulations; i++) all.push(simulate(randomBoundedWeights(lo, hi, rng)))
 
   // Anchor the endpoints: highest-return and lowest-volatility bounded corners.
   const byReturn = Array.from({ length: K }, (_, i) => i).sort((a, b) => returns[b] - returns[a])
@@ -219,10 +235,14 @@ export function computeBoundedFrontier({
 
   const frontier = paretoFrontier(all, nFrontier)
   const frontierSet = new Set(frontier)
-  const background = all
-    .filter(p => !frontierSet.has(p))
-    .sort(() => Math.random() - 0.5)
-    .slice(0, N_BG_DISPLAY)
+  const rest = all.filter(p => !frontierSet.has(p))
+  // Deterministic even stride rather than a random shuffle, so the cloud is
+  // stable across recomputes like the frontier itself.
+  const stride = Math.max(1, Math.floor(rest.length / N_BG_DISPLAY))
+  const background = []
+  for (let i = 0; i < rest.length && background.length < N_BG_DISPLAY; i += stride) {
+    background.push(rest[i])
+  }
 
   return { frontier, background, current }
 }

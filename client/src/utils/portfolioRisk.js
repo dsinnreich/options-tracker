@@ -81,6 +81,31 @@ export function isCovered(row) {
   return row.isCash || (row.sigma != null && row.ret != null)
 }
 
+// Replace trailing returns with the user's own capital market assumptions,
+// one expected return per asset class|style bucket (in percent).
+//
+// Only returns are overridable. Volatility and correlation stay measured,
+// because they are far more estimable from history than mean returns are — a
+// 3Y trailing return carries enormous standard error, and mean-variance
+// optimization is most sensitive to exactly that input. Letting the return be
+// a stated assumption while risk stays measured separates the two.
+//
+// Returns `rows` unchanged (same reference) when there is nothing to apply, so
+// downstream memos don't invalidate needlessly.
+export function applyReturnOverrides(rows, overrides) {
+  if (!overrides) return rows
+  const keys = Object.keys(overrides)
+  if (keys.length === 0) return rows
+
+  return rows.map(r => {
+    const pct = overrides[r.styleKey]
+    if (pct == null || isNaN(pct)) return r
+    // Setting `ret` on a cash row is meaningful: it overrides the assumed cash
+    // yield, which otherwise defaults to the risk-free rate. Sigma stays 0.
+    return { ...r, ret: pct / 100 }
+  })
+}
+
 // (i, j) => correlation, indexed against `rows`.
 // Uses the real Pearson matrix where both tickers have price history, and falls
 // back per-pair to the single-factor proxy corr(A,B) ~= DC_A * DC_B otherwise.
@@ -147,7 +172,9 @@ export function computeRisk(rows, weights, corrLookup, riskFreeRate, subset = nu
 
   const w = idx.map(i => weights[i] / coveredWeight)
   const sigmas = idx.map(i => rows[i].sigma ?? 0)
-  const rets = idx.map(i => (rows[i].isCash ? riskFreeRate : rows[i].ret))
+  // An explicit return wins (including a user override on a cash bucket);
+  // otherwise cash earns the risk-free rate.
+  const rets = idx.map(i => rows[i].ret ?? (rows[i].isCash ? riskFreeRate : 0))
 
   const corrMatrix = idx.map(i => idx.map(j => corrLookup(i, j)))
   const std = Math.sqrt(Math.max(0, portfolioVariance(w, sigmas, corrMatrix)))
@@ -214,7 +241,9 @@ export function buildBucketModel(rows, weights, corrLookup, riskFreeRate) {
   // Within-bucket normalized weights.
   const u = groups.map(b => b.idx.map(i => weights[i] / b.weight))
   const sigmaOf = i => rows[i].sigma ?? 0
-  const retOf = i => (rows[i].isCash ? riskFreeRate : rows[i].ret)
+  // An explicit return wins (including a user override on a cash bucket);
+  // otherwise cash earns the risk-free rate.
+  const retOf = i => rows[i].ret ?? (rows[i].isCash ? riskFreeRate : 0)
 
   // Bucket covariance C_ab.
   const C = groups.map((ba, a) =>

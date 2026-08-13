@@ -61,9 +61,11 @@ export default function PortfolioRiskPanel({ risk, researchWatchlist }) {
     buckets,
     frontier, bestSharpe, loadFrontierPortfolio,
     frontierBand, setFrontierBand,
+    cma, setCma, resetCma, seedCmaFromTrailing, cmaCount, trailingByBucket,
   } = risk
 
   const [showFrontier, setShowFrontier] = useState(false)
+  const [showCma, setShowCma] = useState(false)
 
   if (!current) {
     return (
@@ -165,6 +167,85 @@ export default function PortfolioRiskPanel({ risk, researchWatchlist }) {
           </div>
         )}
 
+        {/* Capital market assumptions */}
+        <div className="mt-4 border-t border-gray-200 pt-3">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <button
+              onClick={() => setShowCma(v => !v)}
+              className="text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1.5"
+            >
+              <span className="text-gray-400 text-xs">{showCma ? '▼' : '▶'}</span>
+              Capital Market Assumptions
+              {cmaCount > 0 ? (
+                <span className="ml-1 px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                  {cmaCount} override{cmaCount === 1 ? '' : 's'} active
+                </span>
+              ) : (
+                <span className="font-normal text-gray-400">(using trailing 3Y)</span>
+              )}
+            </button>
+            {showCma && (
+              <div className="flex items-center gap-2">
+                <button onClick={seedCmaFromTrailing}
+                  className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200">
+                  Fill from trailing
+                </button>
+                <button onClick={resetCma} disabled={cmaCount === 0}
+                  className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200 disabled:opacity-50">
+                  Clear all
+                </button>
+              </div>
+            )}
+          </div>
+
+          {showCma && (
+            <div className="mt-2">
+              <div className="grid gap-x-6 gap-y-1 md:grid-cols-2 xl:grid-cols-3">
+                {buckets.map(b => {
+                  const trailing = trailingByBucket[b.styleKey]
+                  const value = cma[b.styleKey] ?? ''
+                  const overridden = value !== '' && !isNaN(parseFloat(value))
+                  // No trailing figure means no covered holding in this bucket,
+                  // so it contributes nothing to the risk model either way.
+                  const modelled = trailing != null
+                  return (
+                    <div key={b.styleKey} className="flex items-center gap-2 py-0.5">
+                      <span className={`flex-1 text-sm truncate ${modelled ? 'text-gray-700' : 'text-gray-300'}`}
+                            title={`${b.assetClass} — ${b.style}`}>
+                        <span className="text-gray-400">{b.assetClass}</span>
+                        <span className="mx-1 text-gray-300">›</span>
+                        {b.style}
+                      </span>
+                      <span className="text-xs text-gray-400 tabular-nums w-14 text-right"
+                            title="Trailing 3Y return">
+                        {modelled ? fmtPct(trailing) : '—'}
+                      </span>
+                      <input
+                        type="number" step="0.5" value={value} disabled={!modelled}
+                        placeholder={modelled ? (trailing * 100).toFixed(2) : '—'}
+                        onChange={e => setCma(b.styleKey, e.target.value)}
+                        className={`w-20 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-purple-400 disabled:bg-gray-50 disabled:text-gray-300 ${
+                          overridden ? 'border-purple-300 bg-purple-50' : ''
+                        }`}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-gray-400 mt-3">
+                Your expected annual return per bucket, replacing the trailing 3Y figure shown to
+                the left of each box. Leave a box empty to keep using trailing. Volatility and
+                correlations stay measured — only returns become assumptions, because mean returns
+                are by far the least reliable input to estimate from history, and the one the
+                optimizer is most sensitive to. Overrides feed the tiles, the table subtotals and
+                the efficient frontier. They are saved to your account and shared across all your
+                portfolios — an expectation for an asset class doesn&apos;t depend on which account
+                holds it.
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* Efficient frontier */}
         {frontier && frontier.frontier.length > 0 && (
           <div className="mt-4 border-t border-gray-200 pt-3">
@@ -218,8 +299,8 @@ export default function PortfolioRiskPanel({ risk, researchWatchlist }) {
         <div className="mt-3 text-xs text-gray-400 space-y-1">
           <p>
             Std Dev is correlation-adjusted: σₚ = √(ΣΣ wᵢwⱼσᵢσⱼρᵢⱼ), not a weighted average of
-            holding std devs. Sharpe = (return − risk-free) ÷ std dev. σ and return are
-            Morningstar 3Y;{' '}
+            holding std devs. Sharpe = (return − risk-free) ÷ std dev. σ is Morningstar 3Y;
+            return is {cmaCount > 0 ? 'your capital market assumptions where set, otherwise Morningstar 3Y' : 'Morningstar 3Y'};{' '}
             {corrLoading
               ? 'fetching correlations…'
               : usingRealCorrelations
@@ -227,13 +308,22 @@ export default function PortfolioRiskPanel({ risk, researchWatchlist }) {
                 : 'ρ estimated via downside capture ratios (single-factor S&P 500 proxy).'}
             {' '}Cash and liquidity holdings are treated as risk-free.
           </p>
-          <p>
-            All figures are ex-post: trailing realized statistics (3Y for σ and return, 1Y of
-            daily prices for ρ), not a forecast. The What-If shows what your risk and return
-            would have been at these weights over that trailing window — not a prediction of
-            what they will be going forward. Only the risk-free rate is a current-input
-            assumption you set.
-          </p>
+          {cmaCount > 0 ? (
+            <p>
+              Returns are forward-looking where you have set an assumption; σ and ρ remain ex-post
+              (trailing 3Y and 1Y daily). Sharpe therefore mixes a forward numerator with a
+              historical denominator — reasonable, since volatility persists far better than mean
+              returns do, but worth remembering when reading the figure.
+            </p>
+          ) : (
+            <p>
+              All figures are ex-post: trailing realized statistics (3Y for σ and return, 1Y of
+              daily prices for ρ), not a forecast. The What-If shows what your risk and return
+              would have been at these weights over that trailing window — not a prediction of
+              what they will be going forward. Set Capital Market Assumptions above to substitute
+              your own forward return estimates.
+            </p>
+          )}
           {incomplete && (
             <div className="text-amber-600 space-y-0.5">
               <p>Based on {(current.coverage * 100).toFixed(1)}% of portfolio value.</p>

@@ -372,8 +372,50 @@ function Documentation() {
                 answers <em>"what would my risk and return have been at these weights, over this
                 trailing window?"</em> — not <em>"what will they be going forward."</em> A large regime
                 shift (rate cycle, market correction) can make trailing figures a poor guide to what's
-                ahead. The one exception is the Risk-Free Rate field, which is a current-rate
-                assumption you set yourself rather than a historical figure.
+                ahead. Use <strong>Capital Market Assumptions</strong> (below) to replace the return
+                estimates with your own forward-looking numbers.
+              </div>
+            </div>
+
+            <div className="bg-white rounded-md p-4 border border-gray-200">
+              <div className="font-semibold text-gray-900 mb-2">Capital Market Assumptions</div>
+              <p className="text-sm text-gray-700 mb-2">
+                Expand <strong>Capital Market Assumptions</strong> to set your own expected annual
+                return for each asset class · style bucket. Type a number to override; leave the box
+                empty to keep using the trailing 3Y figure, shown to the left of each input. Your
+                assumptions feed the metric tiles, the table subtotals and the efficient frontier.
+              </p>
+              <p className="text-sm text-gray-700 mb-2">
+                They are saved to <strong>your account</strong>, not just this browser, so they
+                survive clearing your cache and follow you to any device you log in from. One set
+                applies to <strong>all your portfolios</strong> — a view on how an asset class will
+                perform doesn't depend on which account holds it, so your assumptions can't drift
+                out of sync between accounts.
+              </p>
+              <ul className="text-sm text-gray-700 space-y-1 mb-2">
+                <li>• <strong>Fill from trailing</strong> — pre-populates every box with the trailing figure, as a starting point to edit down</li>
+                <li>• <strong>Clear all</strong> — removes every override and returns to trailing</li>
+              </ul>
+              <div className="text-sm text-gray-700">
+                <strong>Only returns are overridable</strong>, and that asymmetry is deliberate.
+                Volatility and correlation are reasonably estimable from a few years of history;
+                average returns are not — the standard error is enormous over any window you'd
+                actually have. Mean-variance optimization is also most sensitive to precisely that
+                weakest input: it overweights whatever looks highest-returning, which is
+                disproportionately whatever got lucky. Keeping σ and ρ measured while returns become
+                a stated assumption puts the unreliable input under your control.
+              </div>
+            </div>
+
+            <div className="bg-green-50 rounded-md p-4 border border-green-200">
+              <div className="font-semibold text-green-900 mb-1">📊 Why this matters</div>
+              <div className="text-sm text-gray-700">
+                On a real portfolio, the trailing-3Y frontier showed a best-Sharpe portfolio of
+                <strong> 2.17</strong> — roughly four times a realistic long-run equity Sharpe.
+                Substituting sober long-run return assumptions (7–8% equity, 3.5% muni) dropped it
+                to <strong>0.28</strong>, while the standard deviation didn't move at all. Same risk
+                model, same correlations — the entire difference came from the return estimates.
+                That gap is the size of the trap this feature exists to avoid.
               </div>
             </div>
 

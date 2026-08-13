@@ -457,6 +457,29 @@ const migrations = [
       console.log('✅ Migrated to version 13: Added portfolio_shares table')
     }
   },
+  {
+    version: 14,
+    up(db) {
+      // Capital market assumptions: the user's own expected annual return per
+      // asset class / style bucket, overriding the trailing figure on the
+      // Analysis tab. Scoped per user rather than per portfolio — a view on how
+      // an asset class will perform doesn't depend on which account holds it,
+      // so one set applies everywhere and can't drift between portfolios.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS capital_market_assumptions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          asset_class TEXT NOT NULL,
+          style TEXT NOT NULL,
+          expected_return REAL NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(user_id, asset_class, style)
+        )
+      `)
+      console.log('✅ Migrated to version 14: Added capital_market_assumptions table')
+    }
+  },
 ]
 
 // Run pending migrations
