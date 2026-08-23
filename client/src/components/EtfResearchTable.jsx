@@ -15,6 +15,7 @@ const COLUMNS = [
   { key: 'total_return_ytd', label: 'Return', sub: 'YTD', type: 'percent', decimals: 2, best: 'high' },
   { key: 'total_return_1y', label: 'Return', sub: '1 Year', type: 'percent', decimals: 2, best: 'high' },
   { key: 'total_return_3y', label: 'Return', sub: '3 Year', type: 'percent', decimals: 2, best: 'high' },
+  { key: 'adjusted_return_3y', label: 'Adjusted Return', sub: '3 Year', type: 'percent', decimals: 2, best: 'high' },
   { key: 'total_return_5y', label: 'Return', sub: '5 Year', type: 'percent', decimals: 2, best: 'high' },
   { key: 'downside_capture_3y', label: 'Downside', sub: 'Capture 3Y', type: 'number', decimals: 2, best: 'low' },
   { key: 'sec_yield', label: 'SEC Yield', sub: '30-Day', type: 'percent', decimals: 2, best: 'high' },
@@ -24,6 +25,12 @@ const COLUMNS = [
   { key: 'style_box', label: 'Style Box', type: 'text' },
   { key: 'medalist_rating', label: 'Medalist', type: 'text' }
 ]
+
+function valueFor(row, key) {
+  if (key !== 'adjusted_return_3y') return row[key]
+  if (row.total_return_3y == null || row.tax_cost_3y == null) return null
+  return Number(row.total_return_3y) - Number(row.tax_cost_3y)
+}
 
 function renderStars(n) {
   if (n == null) return '—'
@@ -89,8 +96,8 @@ function EtfResearchTable({ data, onOptimize }) {
       rows = rows.filter(r => checkedTickers.has(r.ticker))
     }
     rows.sort((a, b) => {
-      let av = a[sortField]
-      let bv = b[sortField]
+      let av = valueFor(a, sortField)
+      let bv = valueFor(b, sortField)
       if (av == null) return 1
       if (bv == null) return -1
       if (typeof av === 'string') {
@@ -109,7 +116,7 @@ function EtfResearchTable({ data, onOptimize }) {
     const bests = {}
     for (const col of COLUMNS) {
       if (!col.best) continue
-      const values = visibleData.map(r => r[col.key]).filter(v => v != null)
+      const values = visibleData.map(r => valueFor(r, col.key)).filter(v => v != null)
       if (values.length === 0) continue
       bests[col.key] = col.best === 'high' ? Math.max(...values) : Math.min(...values)
     }
@@ -205,7 +212,8 @@ function EtfResearchTable({ data, onOptimize }) {
                     />
                   </td>
                   {COLUMNS.map(col => {
-                    const isBest = comparing && col.best && row[col.key] != null && bestValues[col.key] === row[col.key]
+                    const value = valueFor(row, col.key)
+                    const isBest = comparing && col.best && value != null && bestValues[col.key] === value
                     return (
                       <td
                         key={col.key}
@@ -214,12 +222,12 @@ function EtfResearchTable({ data, onOptimize }) {
                         } ${col.sticky ? 'sticky left-8 z-10 font-semibold' : ''} ${
                           col.sticky ? (isBest ? 'bg-green-50' : 'bg-white') : ''
                         } ${
-                          col.key === 'name' ? 'text-gray-600 truncate max-w-[240px]' : cellColor(row[col.key], col)
+                          col.key === 'name' ? 'text-gray-600 truncate max-w-[240px]' : cellColor(value, col)
                         } ${col.type === 'stars' ? 'text-yellow-500 tracking-tight' : ''} ${
                           isBest ? 'bg-green-50 font-semibold' : ''
                         }`}
                       >
-                        {formatCell(row[col.key], col)}
+                        {formatCell(value, col)}
                       </td>
                     )
                   })}

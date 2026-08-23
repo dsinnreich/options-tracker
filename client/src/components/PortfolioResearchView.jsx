@@ -20,11 +20,18 @@ const RESEARCH_COLS = [
   { key: 'total_return_ytd', label: 'Return',   sub: 'YTD', fmt: n => fmtPct(n),  color: true  },
   { key: 'total_return_1y',  label: 'Return',   sub: '1Y',  fmt: n => fmtPct(n),  color: true  },
   { key: 'total_return_3y',  label: 'Return',   sub: '3Y',  fmt: n => fmtPct(n),  color: true  },
+  { key: 'adjusted_return_3y', label: 'Adjusted Return', sub: '3Y', fmt: n => fmtPct(n), color: true },
   { key: 'total_return_5y',  label: 'Return',   sub: '5Y',  fmt: n => fmtPct(n),  color: true  },
   { key: 'std_dev_3y',       label: 'Std Dev',  sub: '3Y',  fmt: n => fmtNum(n),  color: false },
   { key: 'sharpe_ratio_3y',  label: 'Sharpe',   sub: '3Y',  fmt: n => fmtNum(n),  color: false },
   { key: 'alpha_3y',         label: 'Alpha',    sub: '3Y',  fmt: n => fmtNum(n),  color: true  },
 ]
+
+function researchValue(research, key) {
+  if (key !== 'adjusted_return_3y') return research?.[key]
+  if (research?.total_return_3y == null || research?.tax_cost_3y == null) return null
+  return Number(research.total_return_3y) - Number(research.tax_cost_3y)
+}
 
 // Value-weighted average of research fields across a list of holdings
 function weightedResearch(holdings, researchByTicker, proxyBySymbol) {
@@ -34,7 +41,7 @@ function weightedResearch(holdings, researchByTicker, proxyBySymbol) {
       .map(h => {
         const sym = h.symbol.replace(/\*+$/, '').toUpperCase()
         const r = researchByTicker[sym] ?? researchByTicker[proxyBySymbol[sym]]
-        const v = r?.[col.key]
+        const v = researchValue(r, col.key)
         return v != null ? { v, w: h.current_value } : null
       })
       .filter(Boolean)
@@ -240,7 +247,7 @@ export default function PortfolioResearchView({ positions, assetClassMap, resear
 
   function renderResearchCells(research, bold = false) {
     return RESEARCH_COLS.map(col => {
-      const val = research?.[col.key]
+      const val = researchValue(research, col.key)
       return (
         <td key={col.key}
             className={`px-3 py-1 text-right whitespace-nowrap text-sm ${bold ? 'font-semibold' : ''} ${val != null ? researchColor(col, val) : 'text-gray-300'}`}>
