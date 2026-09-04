@@ -2,6 +2,9 @@
   "name": "options-tracker",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "workspaces": [
     "client",
     "server"
@@ -18,7 +21,6 @@
     "concurrently": "^8.2.2"
   },
   "dependencies": {
-    "otplib": "^13.4.0",
     "qrcode": "^1.5.4"
   }
 }
