@@ -446,12 +446,17 @@ router.get('/me', (req, res) => {
 
 // Email transporter — recreated each request so env var changes take effect without restart
 function getEmailTransporter() {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return null
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER
+  const pass = process.env.SMTP_PASSWORD || process.env.GMAIL_APP_PASSWORD
+  if (!user || !pass) return null
+
+  const port = Number(process.env.SMTP_PORT || 587)
   return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port,
+    // SMTP port 587 uses STARTTLS; port 465 uses an immediate TLS connection.
+    secure: process.env.SMTP_SECURE != null ? process.env.SMTP_SECURE === 'true' : port === 465,
+    auth: { user, pass },
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000,
@@ -469,12 +474,12 @@ router.post('/forgot-password', async (req, res) => {
     db.prepare('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?').run(resetToken, resetTokenExpires, user.id)
     const transporter = getEmailTransporter()
     if (!transporter) {
-      console.error('Password reset: GMAIL_USER or GMAIL_APP_PASSWORD not set in environment')
+      console.error('Password reset: SMTP_USER/SMTP_PASSWORD or GMAIL_USER/GMAIL_APP_PASSWORD not set in environment')
       return res.status(500).json({ error: 'Email service not configured. Contact the admin to reset your password.' })
     }
     const resetUrl = `${process.env.APP_URL || 'http://localhost:3001'}/reset-password?token=${resetToken}`
     await transporter.sendMail({
-      from: process.env.GMAIL_USER, to: email,
+      from: process.env.SMTP_FROM || process.env.SMTP_USER || process.env.GMAIL_USER, to: email,
       subject: 'Password Reset - Options Tracker',
       html: `<h2>Password Reset</h2><p><a href="${resetUrl}">${resetUrl}</a></p><p>Valid for 1 hour.</p>`
     })
