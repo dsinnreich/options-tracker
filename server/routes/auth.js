@@ -1,7 +1,6 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import crypto from 'crypto'
-import nodemailer from 'nodemailer'
 // Pure Node.js TOTP — no dependency on Web Crypto API (avoids otplib's
 // globalThis.crypto requirement which is absent on some Node versions)
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
@@ -444,18 +443,28 @@ router.get('/me', (req, res) => {
   res.json({ id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1, totpEnabled: user.totp_enabled === 1 })
 })
 
-// Email transporter — recreated each request so env var changes take effect without restart
-function getEmailTransporter() {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return null
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+async function sendPasswordResetEmail(to, resetUrl) {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM_EMAIL,
+      to,
+      subject: 'Password Reset - Options Tracker',
+      html: `<h2>Password Reset</h2><p><a href="${resetUrl}">${resetUrl}</a></p><p>Valid for 1 hour.</p>`,
+    }),
+    signal: AbortSignal.timeout(15000),
   })
+
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(`Resend API returned ${response.status}: ${result.message || 'Unknown error'}`)
+  }
+
+  return result
 }
 
 router.post('/forgot-password', async (req, res) => {
@@ -464,20 +473,15 @@ router.post('/forgot-password', async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Email is required' })
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
     if (!user) return res.json({ success: true, message: 'If that email exists, a reset link has been sent' })
+    if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) {
+      console.error('Password reset: RESEND_API_KEY or RESEND_FROM_EMAIL not set in environment')
+      return res.status(500).json({ error: 'Email service not configured. Contact the admin to reset your password.' })
+    }
     const resetToken = crypto.randomBytes(32).toString('hex')
     const resetTokenExpires = new Date(Date.now() + 3600000).toISOString()
     db.prepare('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?').run(resetToken, resetTokenExpires, user.id)
-    const transporter = getEmailTransporter()
-    if (!transporter) {
-      console.error('Password reset: GMAIL_USER or GMAIL_APP_PASSWORD not set in environment')
-      return res.status(500).json({ error: 'Email service not configured. Contact the admin to reset your password.' })
-    }
     const resetUrl = `${process.env.APP_URL || 'http://localhost:3001'}/reset-password?token=${resetToken}`
-    await transporter.sendMail({
-      from: process.env.GMAIL_USER, to: email,
-      subject: 'Password Reset - Options Tracker',
-      html: `<h2>Password Reset</h2><p><a href="${resetUrl}">${resetUrl}</a></p><p>Valid for 1 hour.</p>`
-    })
+    await sendPasswordResetEmail(email, resetUrl)
     res.json({ success: true, message: 'If that email exists, a reset link has been sent' })
   } catch (err) {
     console.error('Password reset request error:', err.message)
