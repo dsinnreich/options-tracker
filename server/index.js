@@ -27,12 +27,18 @@ if (NODE_ENV === 'production') {
 
 // Session configuration
 const SessionStore = SQLiteStore(session)
+const sessionDbDir = process.env.SESSION_DB_DIR || path.join(__dirname, '../data')
+const sessionStore = new SessionStore({
+  db: 'sessions.db',
+  dir: sessionDbDir,
+  createDirIfNotExists: true,
+  concurrentDb: true,
+})
+
+app.locals.sessionStore = sessionStore
 
 app.use(session({
-  store: new SessionStore({
-    db: 'sessions.db',
-    dir: path.join(__dirname, '../data')
-  }),
+  store: sessionStore,
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,

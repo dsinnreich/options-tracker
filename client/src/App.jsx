@@ -7,6 +7,7 @@ import RollAnalysis from './components/RollAnalysis'
 import Documentation from './components/Documentation'
 import Login from './components/Login'
 import ResetPassword from './components/ResetPassword'
+import RecoverTwoFactor from './components/RecoverTwoFactor'
 import Admin from './components/Admin'
 import ProtectedRoute from './components/ProtectedRoute'
 import PortfolioDashboard from './components/PortfolioDashboard'
@@ -17,6 +18,7 @@ function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/recover-2fa" element={<RecoverTwoFactor />} />
       <Route path="/" element={
         <ProtectedRoute>
           <Layout />

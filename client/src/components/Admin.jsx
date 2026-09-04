@@ -60,7 +60,7 @@ function AdminVerifyModal({ onVerified }) {
 
 // ── Main component ─────────────────────────────────────────────────────────
 function Admin() {
-  const { isAdmin, fetchLoginHistory, fetchTrustedDevices, removeTrustedDevice } = useAuth()
+  const { user: currentUser, isAdmin, fetchLoginHistory, fetchTrustedDevices, removeTrustedDevice } = useAuth()
 
   // Step-up gate
   const [needsVerification, setNeedsVerification] = useState(false)
@@ -339,6 +339,21 @@ function Admin() {
       if (response.status === 403 && data.error === 'admin_verify_required') { setNeedsVerification(true); return }
       if (!response.ok) throw new Error(data.error || 'Failed to generate link')
       setResetLink({ url: data.resetUrl, userName: user.name })
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const handleReset2fa = async (user) => {
+    if (!window.confirm(`Reset two-factor authentication for ${user.name}? This will sign them out and revoke their trusted devices and recovery codes.`)) return
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}/reset-2fa`, {
+        method: 'POST', credentials: 'include'
+      })
+      const data = await response.json()
+      if (response.status === 403 && data.error === 'admin_verify_required') { setNeedsVerification(true); return }
+      if (!response.ok) throw new Error(data.error || 'Failed to reset 2FA')
+      fetchUsers()
     } catch (err) {
       setError(err.message)
     }
@@ -873,6 +888,9 @@ function Admin() {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
                       <button onClick={() => startEditUser(user)} className="text-blue-600 hover:text-blue-900">Edit</button>
                       <button onClick={() => handleGenerateResetLink(user)} className="text-amber-600 hover:text-amber-900">Reset link</button>
+                      {user.totp_enabled && user.id !== currentUser?.id && (
+                        <button onClick={() => handleReset2fa(user)} className="text-orange-600 hover:text-orange-900">Reset 2FA</button>
+                      )}
                       <button onClick={() => { setDeleteTarget({ id: user.id, name: user.name }); setDeleteText('') }} className="text-red-600 hover:text-red-900">Delete</button>
                     </td>
                   </tr>

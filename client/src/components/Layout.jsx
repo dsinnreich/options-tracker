@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import RecoveryCodes from './RecoveryCodes'
 
 function ChangePasswordModal({ onClose }) {
   const { changePassword } = useAuth()
@@ -65,12 +66,92 @@ function ChangePasswordModal({ onClose }) {
   )
 }
 
+function RecoveryCodesModal({ onClose }) {
+  const { regenerateRecoveryCodes } = useAuth()
+  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [recoveryCodes, setRecoveryCodes] = useState([])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setLoading(true)
+    const result = await regenerateRecoveryCodes(password, code)
+    if (result.success) {
+      setRecoveryCodes(result.recoveryCodes)
+      setPassword('')
+      setCode('')
+    } else {
+      setError(result.error || 'Failed to generate recovery codes')
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 px-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">2FA recovery codes</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+        {recoveryCodes.length > 0 ? (
+          <RecoveryCodes codes={recoveryCodes} compact />
+        ) : (
+          <>
+            <p className="text-sm text-gray-600">
+              Generate a new set of one-time recovery codes. Any previous codes will stop working.
+            </p>
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current password</label>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={event => setPassword(event.target.value)}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Authenticator code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                  value={code}
+                  onChange={event => setCode(event.target.value.replace(/\D/g, ''))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md text-center tracking-widest focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="000000"
+                />
+              </div>
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <button
+                type="submit"
+                disabled={loading || code.length !== 6}
+                className="w-full py-2 px-4 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Generating…' : 'Generate new recovery codes'}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout, isAdmin } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const [showChangePassword, setShowChangePassword] = useState(false)
+  const [showRecoveryCodes, setShowRecoveryCodes] = useState(false)
   const menuRef = useRef(null)
 
   const handleLogout = async () => {
@@ -95,6 +176,7 @@ function Layout() {
   return (
     <div className="min-h-screen bg-gray-50">
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
+      {showRecoveryCodes && <RecoveryCodesModal onClose={() => setShowRecoveryCodes(false)} />}
       <nav className="bg-white shadow-sm border-b">
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
@@ -194,6 +276,14 @@ function Layout() {
                     >
                       Change password
                     </button>
+                    {user?.totpEnabled && (
+                      <button
+                        onClick={() => { setMenuOpen(false); setShowRecoveryCodes(true) }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Recovery codes
+                      </button>
+                    )}
                     <div className="border-t border-gray-100 my-1" />
                     <button
                       onClick={handleLogout}

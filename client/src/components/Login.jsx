@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate, useLocation } from 'react-router-dom'
+import RecoveryCodes from './RecoveryCodes'
 
-// step: 'credentials' | 'changepass' | 'totp' | 'setup' | 'forgot'
+// step: 'credentials' | 'changepass' | 'totp' | 'recover' | 'setup' | 'recovery-codes' | 'forgot'
 function Login() {
   const [step, setStep] = useState('credentials')
   const [email, setEmail] = useState('')
@@ -16,11 +17,23 @@ function Login() {
   const [setupCode, setSetupCode] = useState('')
   const [forgotEmail, setForgotEmail] = useState('')
   const [forgotMessage, setForgotMessage] = useState('')
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [recoveryMessage, setRecoveryMessage] = useState('')
+  const [recoveryCodes, setRecoveryCodes] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [isFirstLogin, setIsFirstLogin] = useState(false)
 
-  const { login, setInitialPassword, submitTotp, getSetupSecret, enableTotp, forgotPassword } = useAuth()
+  const {
+    login,
+    setInitialPassword,
+    submitTotp,
+    getSetupSecret,
+    enableTotp,
+    forgotPassword,
+    recoverTotpWithCode,
+    requestMfaRecoveryEmail,
+  } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -107,12 +120,39 @@ function Login() {
     const result = await enableTotp(setupCode.trim())
 
     if (result.success) {
-      navigate(isFirstLogin ? '/help' : from, { replace: true })
+      setRecoveryCodes(result.recoveryCodes)
+      setStep('recovery-codes')
     } else {
       setError(result.error || 'Invalid code — try again')
       setSetupCode('')
     }
 
+    setLoading(false)
+  }
+
+  const handleRecoveryCode = async (e) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    const result = await recoverTotpWithCode(recoveryCode)
+    if (result.success && result.requiresTotpSetup) {
+      await goToSetup()
+    } else {
+      setError(result.error || 'Recovery failed')
+    }
+    setLoading(false)
+  }
+
+  const handleRecoveryEmail = async () => {
+    setError('')
+    setRecoveryMessage('')
+    setLoading(true)
+    const result = await requestMfaRecoveryEmail(email, password)
+    if (result.success) {
+      setRecoveryMessage(result.message)
+    } else {
+      setError(result.error || 'Failed to send recovery email')
+    }
     setLoading(false)
   }
 
@@ -145,7 +185,9 @@ function Login() {
             {step === 'credentials' && 'Sign in to your account'}
             {step === 'changepass' && 'Choose your password'}
             {step === 'totp' && 'Two-factor authentication'}
+            {step === 'recover' && 'Recover two-factor authentication'}
             {step === 'setup' && 'Set up two-factor authentication'}
+            {step === 'recovery-codes' && 'Your recovery codes'}
             {step === 'forgot' && 'Reset your password'}
           </p>
         </div>
@@ -296,7 +338,75 @@ function Login() {
             >
               {loading ? 'Verifying…' : 'Verify'}
             </button>
+            <button
+              type="button"
+              onClick={() => { setStep('recover'); setError(''); setRecoveryMessage('') }}
+              className="w-full text-sm font-medium text-blue-600 hover:text-blue-500"
+            >
+              Lost access to your authenticator?
+            </button>
           </form>
+        )}
+
+        {/* ── TOTP recovery ── */}
+        {step === 'recover' && (
+          <div className="mt-8 space-y-6">
+            <form onSubmit={handleRecoveryCode} className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Use a recovery code</h3>
+                <p className="mt-1 text-sm text-gray-600">
+                  Enter one of the one-time codes you saved when setting up 2FA.
+                </p>
+              </div>
+              <input
+                type="text"
+                autoComplete="one-time-code"
+                autoFocus
+                value={recoveryCode}
+                onChange={event => setRecoveryCode(event.target.value.toUpperCase())}
+                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 text-center font-mono tracking-wider focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="ABCD-EFGH-IJKL-MNOP"
+              />
+              <button
+                type="submit"
+                disabled={loading || recoveryCode.replace(/[^A-Z2-7]/gi, '').length < 16}
+                className="w-full py-2 px-4 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Checking…' : 'Use recovery code'}
+              </button>
+            </form>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
+              <div className="relative flex justify-center"><span className="px-2 bg-gray-50 text-xs uppercase text-gray-400">or</span></div>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-900">Recover by email</h3>
+              <p className="text-sm text-gray-600">
+                We will send a 15-minute recovery link to <strong>{email}</strong>. You will need to enter your password again.
+              </p>
+              <button
+                type="button"
+                onClick={handleRecoveryEmail}
+                disabled={loading}
+                className="w-full py-2 px-4 border border-blue-600 text-blue-600 text-sm font-medium rounded-md hover:bg-blue-50 disabled:opacity-50"
+              >
+                {loading ? 'Sending…' : 'Send recovery email'}
+              </button>
+            </div>
+
+            {error && <div className="rounded-md bg-red-50 p-4"><p className="text-sm text-red-700">{error}</p></div>}
+            {recoveryMessage && <div className="rounded-md bg-green-50 p-4"><p className="text-sm text-green-700">{recoveryMessage}</p></div>}
+
+            <button
+              type="button"
+              onClick={() => { setStep('totp'); setError(''); setRecoveryMessage('') }}
+              className="w-full text-sm font-medium text-gray-600 hover:text-gray-800"
+            >
+              Back to authenticator code
+            </button>
+          </div>
         )}
 
         {/* ── Step 2b: TOTP first-time setup ── */}
@@ -348,6 +458,13 @@ function Login() {
               {loading ? 'Activating…' : 'Activate 2FA & Sign in'}
             </button>
           </form>
+        )}
+
+        {step === 'recovery-codes' && (
+          <RecoveryCodes
+            codes={recoveryCodes}
+            onContinue={() => navigate(isFirstLogin ? '/help' : from, { replace: true })}
+          />
         )}
 
         {/* ── Forgot password ── */}
