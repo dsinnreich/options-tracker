@@ -480,6 +480,57 @@ const migrations = [
       console.log('✅ Migrated to version 14: Added capital_market_assumptions table')
     }
   },
+  {
+    version: 15,
+    up(db) {
+      try {
+        db.exec(`ALTER TABLE users ADD COLUMN totp_pending_secret TEXT`)
+      } catch (err) {
+        if (!err.message.includes('duplicate column name')) throw err
+      }
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          code_hash TEXT NOT NULL UNIQUE,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          used_at DATETIME
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mfa_recovery_codes_user
+          ON mfa_recovery_codes(user_id, used_at);
+
+        CREATE TABLE IF NOT EXISTS mfa_recovery_tokens (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          token_hash TEXT NOT NULL UNIQUE,
+          requested_ip TEXT,
+          expires_at DATETIME NOT NULL,
+          used_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mfa_recovery_tokens_user
+          ON mfa_recovery_tokens(user_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS security_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          email TEXT,
+          event_type TEXT NOT NULL,
+          ip TEXT,
+          details TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_security_events_user
+          ON security_events(user_id, created_at);
+      `)
+
+      console.log('✅ Migrated to version 15: Added secure MFA recovery')
+    }
+  },
 ]
 
 // Run pending migrations

@@ -126,8 +126,72 @@ export function AuthProvider({ children }) {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Failed to enable 2FA')
 
-      setUser(data.user)
-      return { success: true }
+      if (data.user) setUser(data.user)
+      return { success: true, recoveryCodes: data.recoveryCodes || [] }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  }, [])
+
+  const recoverTotpWithCode = useCallback(async (recoveryCode) => {
+    try {
+      const response = await fetch('/api/auth/2fa/recover/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ recoveryCode })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Recovery failed')
+      return { success: true, requiresTotpSetup: data.requiresTotpSetup }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  }, [])
+
+  const requestMfaRecoveryEmail = useCallback(async (email, password) => {
+    try {
+      const response = await fetch('/api/auth/2fa/recover/request-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Recovery request failed')
+      return { success: true, message: data.message }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  }, [])
+
+  const completeMfaRecoveryEmail = useCallback(async (token, password) => {
+    try {
+      const response = await fetch('/api/auth/2fa/recover/complete-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ token, password })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Recovery failed')
+      return { success: true, requiresTotpSetup: data.requiresTotpSetup }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  }, [])
+
+  const regenerateRecoveryCodes = useCallback(async (password, code) => {
+    try {
+      const response = await fetch('/api/auth/2fa/recovery-codes/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password, code })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to generate recovery codes')
+      return { success: true, recoveryCodes: data.recoveryCodes || [] }
     } catch (err) {
       return { success: false, error: err.message }
     }
@@ -289,6 +353,10 @@ export function AuthProvider({ children }) {
     submitTotp,
     getSetupSecret,
     enableTotp,
+    recoverTotpWithCode,
+    requestMfaRecoveryEmail,
+    completeMfaRecoveryEmail,
+    regenerateRecoveryCodes,
     disable2fa,
     verifyAdmin,
     fetchLoginHistory,

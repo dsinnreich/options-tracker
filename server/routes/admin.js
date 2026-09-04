@@ -2,6 +2,8 @@ import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import crypto from 'crypto'
 import db from '../db.js'
+import { sendSecurityNotice } from '../email.js'
+import { clearMfaForRecovery, recordSecurityEvent, revokeUserSessions } from '../mfaRecovery.js'
 
 const router = Router()
 
@@ -16,7 +18,16 @@ function requireAdmin(req, res, next) {
 // Middleware to require fresh admin step-up verification (TOTP re-verify within last hour)
 function requireAdminVerified(req, res, next) {
   const { adminVerifiedAt } = req.session
-  if (!adminVerifiedAt || Date.now() - adminVerifiedAt > 7 * 24 * 60 * 60 * 1000) {
+  if (!adminVerifiedAt || Date.now() - adminVerifiedAt > 60 * 60 * 1000) {
+    return res.status(403).json({ error: 'admin_verify_required' })
+  }
+  next()
+}
+
+// Resetting another user's authentication factor is especially sensitive.
+function requireRecentAdminVerification(req, res, next) {
+  const { adminVerifiedAt } = req.session
+  if (!adminVerifiedAt || Date.now() - adminVerifiedAt > 10 * 60 * 1000) {
     return res.status(403).json({ error: 'admin_verify_required' })
   }
   next()
@@ -205,6 +216,33 @@ router.post('/users/:id/reset-link', requireAdmin, requireAdminVerified, (req, r
   } catch (err) {
     console.error('Generate reset link error:', err)
     res.status(500).json({ error: 'Failed to generate reset link' })
+  }
+})
+
+// Last-resort recovery for another user after the administrator verifies their identity.
+router.post('/users/:id/reset-2fa', requireAdmin, requireRecentAdminVerification, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id)
+    if (userId === req.session.userId) {
+      return res.status(400).json({ error: 'Use the account recovery flow to reset your own 2FA' })
+    }
+
+    const user = db.prepare('SELECT id, email, name, totp_enabled FROM users WHERE id = ?').get(userId)
+    if (!user) return res.status(404).json({ error: 'User not found' })
+    if (!user.totp_enabled) return res.status(400).json({ error: '2FA is not currently enabled' })
+
+    clearMfaForRecovery(user.id)
+    await revokeUserSessions(req, user.id)
+    recordSecurityEvent(user, 'mfa_admin_reset', req.ip, `Reset by administrator user ${req.session.userId}`)
+    void sendSecurityNotice(
+      user.email,
+      'An administrator reset your two-factor authentication',
+      'Your previous authenticator, recovery codes, trusted devices, and active sessions were revoked. Sign in with your password to set up a new authenticator.'
+    )
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Admin 2FA reset error:', err)
+    res.status(500).json({ error: 'Failed to reset two-factor authentication' })
   }
 })
 

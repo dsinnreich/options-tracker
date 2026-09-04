@@ -52,6 +52,17 @@ function totpUri(email, issuer, secret) {
 }
 import QRCode from 'qrcode'
 import db from '../db.js'
+import { sendEmail, sendSecurityNotice } from '../email.js'
+import {
+  clearMfaForRecovery,
+  hashRecoveryCode,
+  hashRecoveryToken,
+  recordSecurityEvent,
+  regenerateSession,
+  replaceRecoveryCodes,
+  revokeUserSessions,
+  saveSession,
+} from '../mfaRecovery.js'
 
 const router = Router()
 
@@ -60,6 +71,8 @@ const router = Router()
 const APP_NAME = 'Options Tracker'
 const TRUSTED_DEVICE_COOKIE = 'td'
 const TRUSTED_DEVICE_DAYS = 30
+const MFA_RECOVERY_TOKEN_MINUTES = 15
+const DUMMY_PASSWORD_HASH = '$2b$10$Y8E48.d8e89QJpXAIpzO8efyRdkkZdVcoeMOeaOfW/Yof.RWw0usi'
 
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex')
@@ -96,11 +109,11 @@ function logLogin(userId, email, ip, country, success, failureReason = null, tru
 // Rate limit: max 5 failed attempts per email in last 15 minutes
 function isRateLimited(email) {
   try {
-    const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString()
     const row = db.prepare(`
       SELECT COUNT(*) as n FROM login_history
-      WHERE email = ? AND success = 0 AND created_at > ?
-    `).get(email, cutoff)
+      WHERE email = ? AND success = 0
+        AND created_at > datetime('now', '-15 minutes')
+    `).get(email)
     return row.n >= 5
   } catch {
     return false
@@ -150,7 +163,17 @@ function setFullSession(req, user) {
   // clear any pending state
   delete req.session.pendingUserId
   delete req.session.setupUserId
+  delete req.session.mfaRecoveryMethod
   delete req.session.adminVerifiedAt
+}
+
+async function beginMfaSetupAfterRecovery(req, user, method) {
+  clearMfaForRecovery(user.id)
+  await revokeUserSessions(req, user.id, req.sessionID)
+  await regenerateSession(req)
+  req.session.setupUserId = user.id
+  req.session.mfaRecoveryMethod = method
+  await saveSession(req)
 }
 
 // ─── login ────────────────────────────────────────────────────────────────────
@@ -200,7 +223,7 @@ router.post('/login', async (req, res) => {
       setFullSession(req, user)
       return req.session.save((err) => {
         if (err) return res.status(500).json({ error: 'Session error' })
-        return res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1 } })
+        return res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1, totpEnabled: true } })
       })
     }
 
@@ -252,7 +275,7 @@ router.post('/set-password', async (req, res) => {
     setFullSession(req, user)
     req.session.save((err) => {
       if (err) return res.status(500).json({ error: 'Session error' })
-      res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1 } })
+      res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1, totpEnabled: user.totp_enabled === 1 } })
     })
   } catch (err) {
     console.error('set-password error:', err)
@@ -291,7 +314,7 @@ router.post('/2fa/verify', async (req, res) => {
 
     req.session.save((err) => {
       if (err) return res.status(500).json({ error: 'Session error' })
-      res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1 } })
+      res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1, totpEnabled: true } })
     })
   } catch (err) {
     console.error('2fa/verify error:', err)
@@ -299,12 +322,157 @@ router.post('/2fa/verify', async (req, res) => {
   }
 })
 
+// Use a saved one-time recovery code after the password step.
+router.post('/2fa/recover/code', async (req, res) => {
+  try {
+    const userId = req.session.pendingUserId
+    const { recoveryCode } = req.body
+    if (!userId) return res.status(400).json({ error: 'Start by signing in with your password' })
+    if (!recoveryCode) return res.status(400).json({ error: 'Recovery code is required' })
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!user?.totp_enabled) return res.status(400).json({ error: '2FA recovery is not available' })
+    if (isRateLimited(user.email)) return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' })
+
+    const storedCode = db.prepare(`
+      SELECT id FROM mfa_recovery_codes
+      WHERE user_id = ? AND code_hash = ? AND used_at IS NULL
+    `).get(user.id, hashRecoveryCode(recoveryCode))
+
+    if (!storedCode) {
+      logLogin(user.id, user.email, getClientIp(req), null, false, 'wrong_mfa_recovery_code')
+      recordSecurityEvent(user, 'mfa_recovery_code_failed', getClientIp(req))
+      return res.status(401).json({ error: 'Invalid or already-used recovery code' })
+    }
+
+    await beginMfaSetupAfterRecovery(req, user, 'recovery_code')
+    recordSecurityEvent(user, 'mfa_recovery_completed', getClientIp(req), 'Recovery code')
+    res.clearCookie(TRUSTED_DEVICE_COOKIE)
+    void sendSecurityNotice(
+      user.email,
+      'Two-factor authentication recovery completed',
+      'A recovery code was used to reset your authenticator. All trusted devices and previous recovery codes were revoked.'
+    )
+    res.json({ success: true, requiresTotpSetup: true })
+  } catch (err) {
+    console.error('2fa/recover/code error:', err)
+    res.status(500).json({ error: 'Failed to recover two-factor authentication' })
+  }
+})
+
+// Request a short-lived recovery link. A valid password is required, but the
+// response is deliberately generic so the endpoint does not reveal accounts.
+router.post('/2fa/recover/request-email', async (req, res) => {
+  const genericMessage = 'If the account details are valid, a recovery link has been sent.'
+  try {
+    const { email, password } = req.body
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' })
+
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
+    if (user && isRateLimited(user.email)) {
+      return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' })
+    }
+    const validPassword = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH)
+    if (!user || !validPassword || !user.totp_enabled) {
+      if (user) {
+        logLogin(user.id, user.email, getClientIp(req), null, false, 'mfa_recovery_bad_password')
+        recordSecurityEvent(user, 'mfa_recovery_email_failed', getClientIp(req))
+      }
+      return res.json({ success: true, message: genericMessage })
+    }
+
+    const recentRequests = db.prepare(`
+      SELECT COUNT(*) AS count FROM mfa_recovery_tokens
+      WHERE user_id = ? AND created_at > datetime('now', '-15 minutes')
+    `).get(user.id).count
+    if (recentRequests >= 3) {
+      return res.status(429).json({ error: 'Too many recovery requests. Try again in 15 minutes.' })
+    }
+    if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) {
+      return res.status(503).json({ error: 'Recovery email service is unavailable' })
+    }
+
+    const token = crypto.randomBytes(32).toString('base64url')
+    const tokenHash = hashRecoveryToken(token)
+    const expiresAt = new Date(Date.now() + MFA_RECOVERY_TOKEN_MINUTES * 60 * 1000).toISOString()
+    db.prepare(`
+      DELETE FROM mfa_recovery_tokens WHERE created_at < datetime('now', '-30 days')
+    `).run()
+    db.prepare(`
+      UPDATE mfa_recovery_tokens SET used_at = CURRENT_TIMESTAMP
+      WHERE user_id = ? AND used_at IS NULL
+    `).run(user.id)
+    db.prepare(`
+      INSERT INTO mfa_recovery_tokens (user_id, token_hash, requested_ip, expires_at)
+      VALUES (?, ?, ?, ?)
+    `).run(user.id, tokenHash, getClientIp(req), expiresAt)
+
+    const appUrl = (process.env.APP_URL || 'http://localhost:3001').replace(/\/$/, '')
+    const recoveryUrl = `${appUrl}/recover-2fa?token=${encodeURIComponent(token)}`
+    try {
+      await sendMfaRecoveryEmail(user.email, recoveryUrl)
+    } catch (err) {
+      db.prepare('DELETE FROM mfa_recovery_tokens WHERE token_hash = ?').run(tokenHash)
+      throw err
+    }
+
+    recordSecurityEvent(user, 'mfa_recovery_email_requested', getClientIp(req))
+    res.json({ success: true, message: genericMessage })
+  } catch (err) {
+    console.error('2fa/recover/request-email error:', err.message)
+    res.status(500).json({ error: 'Failed to send the recovery email' })
+  }
+})
+
+// Complete email recovery with independent proof of both the emailed token and
+// the account password, then force enrollment of a replacement authenticator.
+router.post('/2fa/recover/complete-email', async (req, res) => {
+  try {
+    const { token, password } = req.body
+    if (!token || !password) return res.status(400).json({ error: 'Recovery token and password are required' })
+
+    const recovery = db.prepare(`
+      SELECT t.id AS token_id, t.expires_at, t.used_at, u.*
+      FROM mfa_recovery_tokens t
+      JOIN users u ON u.id = t.user_id
+      WHERE t.token_hash = ?
+    `).get(hashRecoveryToken(token))
+
+    if (!recovery || recovery.used_at || new Date(recovery.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Invalid or expired recovery link' })
+    }
+    if (isRateLimited(recovery.email)) {
+      return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' })
+    }
+
+    const validPassword = await bcrypt.compare(password, recovery.password_hash)
+    if (!validPassword) {
+      logLogin(recovery.id, recovery.email, getClientIp(req), null, false, 'mfa_recovery_bad_password')
+      recordSecurityEvent(recovery, 'mfa_recovery_email_failed', getClientIp(req))
+      return res.status(401).json({ error: 'Incorrect password' })
+    }
+
+    await beginMfaSetupAfterRecovery(req, recovery, 'email')
+    recordSecurityEvent(recovery, 'mfa_recovery_completed', getClientIp(req), 'Email link and password')
+    res.clearCookie(TRUSTED_DEVICE_COOKIE)
+    void sendSecurityNotice(
+      recovery.email,
+      'Two-factor authentication recovery completed',
+      'Your authenticator was reset using an email recovery link and your password. All trusted devices, active sessions, and previous recovery codes were revoked.'
+    )
+    res.json({ success: true, requiresTotpSetup: true })
+  } catch (err) {
+    console.error('2fa/recover/complete-email error:', err)
+    res.status(500).json({ error: 'Failed to complete two-factor authentication recovery' })
+  }
+})
+
 // ─── TOTP setup (new users, or changing authenticator) ────────────────────────
 
-// Generate a secret + QR code. Requires either a pending setup session or a live session.
+// Generate a secret + QR code. Requires a setup-only session.
 router.get('/2fa/setup-secret', async (req, res) => {
   try {
-    const userId = req.session.setupUserId || req.session.userId
+    const userId = req.session.setupUserId
     if (!userId) return res.status(401).json({ error: 'Not authenticated' })
 
     const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(userId)
@@ -314,7 +482,8 @@ router.get('/2fa/setup-secret', async (req, res) => {
     const otpauth = totpUri(user.email, APP_NAME, secret)
     const qrDataUrl = await QRCode.toDataURL(otpauth)
 
-    db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(secret, userId)
+    // Do not replace a working authenticator until the new secret is verified.
+    db.prepare('UPDATE users SET totp_pending_secret = ? WHERE id = ?').run(secret, userId)
 
     res.json({ secret, qrDataUrl })
   } catch (err) {
@@ -327,29 +496,41 @@ router.get('/2fa/setup-secret', async (req, res) => {
 router.post('/2fa/enable', async (req, res) => {
   try {
     const { code } = req.body
-    const userId = req.session.setupUserId || req.session.userId
+    const userId = req.session.setupUserId
     if (!userId) return res.status(401).json({ error: 'Not authenticated' })
     if (!code) return res.status(400).json({ error: 'Code is required' })
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
-    if (!user?.totp_secret) return res.status(400).json({ error: '2FA secret not generated yet' })
+    if (!user?.totp_pending_secret) return res.status(400).json({ error: '2FA secret not generated yet' })
 
-    const valid = totpVerify(code, user.totp_secret)
+    const valid = totpVerify(code, user.totp_pending_secret)
     if (!valid) return res.status(401).json({ error: 'Invalid code — make sure your authenticator clock is synced' })
 
-    db.prepare('UPDATE users SET totp_enabled = 1 WHERE id = ?').run(userId)
+    db.prepare(`
+      UPDATE users
+      SET totp_secret = totp_pending_secret, totp_pending_secret = NULL,
+          totp_enabled = 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(userId)
+    const recoveryCodes = replaceRecoveryCodes(userId)
+    recordSecurityEvent(user, 'mfa_enabled', getClientIp(req), 'New authenticator enrolled')
+    void sendSecurityNotice(
+      user.email,
+      'Two-factor authentication was set up',
+      'A new authenticator was added to your Options Tracker account. If you did not do this, contact the administrator immediately.'
+    )
 
-    if (req.session.setupUserId) {
-      const fullUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
-      setFullSession(req, fullUser)
-      logLogin(userId, fullUser.email, getClientIp(req), null, true)
-      return req.session.save((err) => {
-        if (err) return res.status(500).json({ error: 'Session error' })
-        res.json({ success: true, user: { id: fullUser.id, email: fullUser.email, name: fullUser.name, isAdmin: fullUser.is_admin === 1 } })
+    const fullUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    setFullSession(req, fullUser)
+    logLogin(userId, fullUser.email, getClientIp(req), null, true)
+    req.session.save((err) => {
+      if (err) return res.status(500).json({ error: 'Session error' })
+      res.json({
+        success: true,
+        recoveryCodes,
+        user: { id: fullUser.id, email: fullUser.email, name: fullUser.name, isAdmin: fullUser.is_admin === 1, totpEnabled: true }
       })
-    }
-
-    res.json({ success: true, message: '2FA enabled' })
+    })
   } catch (err) {
     console.error('2fa/enable error:', err)
     res.status(500).json({ error: 'Failed to enable 2FA: ' + err.message })
@@ -372,11 +553,61 @@ router.post('/2fa/disable', async (req, res) => {
     const validCode = totpVerify(code, user.totp_secret)
     if (!validCode) return res.status(401).json({ error: 'Invalid authenticator code' })
 
-    db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(user.id)
+    const disable = db.transaction(() => {
+      db.prepare(`
+        UPDATE users
+        SET totp_enabled = 0, totp_secret = NULL, totp_pending_secret = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(user.id)
+      db.prepare('DELETE FROM mfa_recovery_codes WHERE user_id = ?').run(user.id)
+      db.prepare('DELETE FROM mfa_recovery_tokens WHERE user_id = ?').run(user.id)
+      db.prepare('DELETE FROM trusted_devices WHERE user_id = ?').run(user.id)
+    })
+    disable()
+    recordSecurityEvent(user, 'mfa_disabled', getClientIp(req))
+    void sendSecurityNotice(
+      user.email,
+      'Two-factor authentication was disabled',
+      'Two-factor authentication was disabled on your Options Tracker account. If you did not do this, contact the administrator immediately.'
+    )
     res.json({ success: true, message: '2FA disabled' })
   } catch (err) {
     console.error('2fa/disable error:', err)
     res.status(500).json({ error: 'Failed to disable 2FA: ' + err.message })
+  }
+})
+
+// Generate a fresh set of one-time recovery codes. Existing codes are revoked.
+router.post('/2fa/recovery-codes/regenerate', async (req, res) => {
+  try {
+    if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' })
+    const { password, code } = req.body
+    if (!password || !code) return res.status(400).json({ error: 'Password and authenticator code are required' })
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId)
+    if (!user?.totp_enabled || !user.totp_secret) return res.status(400).json({ error: '2FA is not configured' })
+
+    const [validPassword, validCode] = await Promise.all([
+      bcrypt.compare(password, user.password_hash),
+      Promise.resolve(totpVerify(code, user.totp_secret)),
+    ])
+    if (!validPassword || !validCode) {
+      recordSecurityEvent(user, 'mfa_recovery_codes_failed', getClientIp(req))
+      return res.status(401).json({ error: 'Password or authenticator code is incorrect' })
+    }
+
+    const recoveryCodes = replaceRecoveryCodes(user.id)
+    recordSecurityEvent(user, 'mfa_recovery_codes_regenerated', getClientIp(req))
+    void sendSecurityNotice(
+      user.email,
+      'New recovery codes were generated',
+      'Your previous Options Tracker recovery codes are no longer valid. If you did not generate new codes, contact the administrator immediately.'
+    )
+    res.json({ success: true, recoveryCodes })
+  } catch (err) {
+    console.error('recovery-codes/regenerate error:', err)
+    res.status(500).json({ error: 'Failed to generate recovery codes' })
   }
 })
 
@@ -443,28 +674,24 @@ router.get('/me', (req, res) => {
   res.json({ id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === 1, totpEnabled: user.totp_enabled === 1 })
 })
 
-async function sendPasswordResetEmail(to, resetUrl) {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: process.env.RESEND_FROM_EMAIL,
-      to,
-      subject: 'Password Reset - Options Tracker',
-      html: `<h2>Password Reset</h2><p><a href="${resetUrl}">${resetUrl}</a></p><p>Valid for 1 hour.</p>`,
-    }),
-    signal: AbortSignal.timeout(15000),
-  })
+function sendPasswordResetEmail(to, resetUrl) {
+  return sendEmail(
+    to,
+    'Password Reset - Options Tracker',
+    `<h2>Password Reset</h2><p><a href="${resetUrl}">${resetUrl}</a></p><p>Valid for 1 hour.</p>`
+  )
+}
 
-  const result = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    throw new Error(`Resend API returned ${response.status}: ${result.message || 'Unknown error'}`)
-  }
-
-  return result
+function sendMfaRecoveryEmail(to, recoveryUrl) {
+  return sendEmail(
+    to,
+    'Recover two-factor authentication - Options Tracker',
+    `<h2>Two-factor authentication recovery</h2>
+     <p>A request was made to replace the authenticator on your Options Tracker account.</p>
+     <p><a href="${recoveryUrl}">Continue 2FA recovery</a></p>
+     <p>This single-use link expires in ${MFA_RECOVERY_TOKEN_MINUTES} minutes. You will need to enter your password again.</p>
+     <p>If you did not request this, do not use the link and contact the administrator.</p>`
+  )
 }
 
 router.post('/forgot-password', async (req, res) => {
@@ -497,7 +724,23 @@ router.post('/reset-password', async (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE reset_token = ?').get(token)
     if (!user || new Date(user.reset_token_expires) < new Date()) return res.status(400).json({ error: 'Invalid or expired reset token' })
     const passwordHash = await bcrypt.hash(newPassword, 10)
-    db.prepare('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?').run(passwordHash, user.id)
+    const reset = db.transaction(() => {
+      db.prepare(`
+        UPDATE users
+        SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(passwordHash, user.id)
+      db.prepare('DELETE FROM trusted_devices WHERE user_id = ?').run(user.id)
+    })
+    reset()
+    await revokeUserSessions(req, user.id)
+    recordSecurityEvent(user, 'password_reset', getClientIp(req))
+    void sendSecurityNotice(
+      user.email,
+      'Your password was reset',
+      'Your Options Tracker password was reset. Existing sessions and trusted devices were signed out. Your authenticator configuration was not changed.'
+    )
     res.json({ success: true, message: 'Password reset successful' })
   } catch (err) {
     res.status(500).json({ error: 'Failed to reset password' })
