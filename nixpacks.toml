@@ -1,5 +1,10 @@
 [phases.setup]
-nixPkgs = ["...", "python3", "python3Packages.setuptools", "gcc", "gnumake"]
+nixPkgs = ["...", "python3", "gcc", "gnumake"]
 
 [phases.install]
-cmds = ["npm ci --foreground-scripts --build-from-source --no-audit --no-fund"]
+cmds = [
+  "npm ci --ignore-scripts --no-audit --no-fund",
+  "npm rebuild bcrypt esbuild --foreground-scripts",
+  "cd node_modules/better-sqlite3 && node ../node-gyp/bin/node-gyp.js rebuild --release",
+  "cd node_modules/sqlite3 && node ../node-gyp/bin/node-gyp.js rebuild"
+]
